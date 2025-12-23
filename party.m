@@ -3,14 +3,25 @@ classdef ChannelEqualizer < matlab.System
         algorithm = 'LMS';
         nFeedforwardTaps = 20;
         nFeedbackTaps = 10;
+        stepSize = 5e-2;
+        forgetFactor = 0.99;
+        initInvCorr = 1e-2;
         nSampsPerSymb = 4;
         modOrder = 8;
-        stepSize = 5e-2;
-        forgetFactor = .99
-        initInvCorr = 1e-2
 
-        measurementNoise = 1e-3
-        processNoise = 1e-5
+        % Kalman filter parameters (tap-state model)
+        %
+        % For the scalar measurement model used here:
+        %   d[n] = u[n]^H w[n] + v[n],   v ~ CN(0, R)
+        % and random-walk tap evolution:
+        %   w[n] = w[n-1] + q[n-1],      q ~ CN(0, Q)
+        %
+        % measurementNoise / measureNoise: observation noise variance R (scalar)
+        % processNoise: process noise Q (scalar, vector (diag), or matrix)
+        measurementNoise = 1e-3;
+        measureNoise = [];            % optional alias; if set, overrides measurementNoise
+        processNoise = 1e-5;
+        initialCovariance = [];       % optional override for P0 scale (scalar)
     end
 
     properties (Access = private)
@@ -20,9 +31,6 @@ classdef ChannelEqualizer < matlab.System
         fbDelayLine
         P
         midTapIndex
-
-        measuredNoise = []
-        initialCovariance
     end 
 
 
@@ -49,7 +57,11 @@ classdef ChannelEqualizer < matlab.System
 
             if obj.isRls() || obj.isKalman()
                 totalTaps = obj.nFeedbackTaps + obj.nFeedforwardTaps;
-                obj.P = (1/obj.initInvCorr)*eye(totalTaps);
+                p0Scale = 1/obj.initInvCorr;
+                if ~isempty(obj.initialCovariance)
+                    p0Scale = obj.initialCovariance;
+                end
+                obj.P = p0Scale * eye(totalTaps);
             else
                 obj.P = [];
             end
@@ -126,7 +138,50 @@ classdef ChannelEqualizer < matlab.System
 
             elseif obj.isKalman()
                 u = [obj.ffDelayLine; -obj.fbDelayLine];
-                
+                totalTaps = numel(u);
+
+                % Build Q (process noise covariance)
+                qSpec = obj.processNoise;
+                if isempty(qSpec)
+                    qMat = zeros(totalTaps);
+                elseif isscalar(qSpec)
+                    qMat = real(qSpec) * eye(totalTaps);
+                elseif isvector(qSpec) && numel(qSpec) == totalTaps
+                    qMat = diag(real(qSpec(:)));
+                elseif isequal(size(qSpec), [totalTaps totalTaps])
+                    qMat = real(qSpec);
+                else
+                    qMat = real(qSpec(1)) * eye(totalTaps);
+                end
+
+                % Measurement noise variance R (allow alias measureNoise)
+                rVar = obj.measurementNoise;
+                if ~isempty(obj.measureNoise)
+                    rVar = obj.measureNoise;
+                end
+                rVar = real(rVar);
+                if rVar <= 0
+                    rVar = eps;
+                end
+
+                % Predict (random-walk tap model: F = I)
+                pPred = obj.P + qMat;
+
+                % Update (scalar measurement)
+                s = real((u' * pPred * u) + rVar);
+                if s <= 0
+                    s = eps;
+                end
+                K = (pPred * u) / s;
+
+                w = [obj.ffWeights; obj.fbWeights] + K * conj(symbErr);
+                obj.ffWeights = w(1:obj.nFeedforwardTaps);
+                obj.fbWeights = w(obj.nFeedforwardTaps + 1:end);
+
+                % Joseph stabilized covariance update (keeps P PSD)
+                iMat = eye(totalTaps);
+                pNew = (iMat - K * u') * pPred * (iMat - K * u')' + (K * rVar * K');
+                obj.P = (pNew + pNew')/2;
             else
                 obj.ffWeights = obj.ffWeights + obj.stepSize * conj(symbErr) * obj.ffDelayLine;
                 obj.fbWeights = obj.fbWeights - obj.stepSize * conj(symbErr) * obj.fbDelayLine;
@@ -138,7 +193,7 @@ classdef ChannelEqualizer < matlab.System
         end
 
         function tf = isKalman(obj)
-            tf = strcmpi(obj.algorithm, 'Kalman');
+            tf = strcmpi(obj.algorithm, 'Kalman'); 
         end
     end
 end
