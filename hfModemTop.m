@@ -3,14 +3,14 @@ close all; clc; clear;
 
 cfg.M = 8;
 cfg.numDataSymbols = 64;
-cfg.numPilotSymbols = 1024;
+cfg.numPilotSymbols = 64;
 cfg.numBlankSymbols = 16;
 cfg.samplesPerSymbol = 4;
 cfg.rolloff = 0.25;
 cfg.filterSpan = 8;
 cfg.snrDb = 0:4:30;
 cfg.sampRate = 9600;
-cfg.numFrames = 5;
+cfg.numFrames = 100;
 
 
 cfg.fMax = 1;
@@ -27,7 +27,8 @@ pilotBits = randi([0 1], cfg.numPilotSymbols * log2(cfg.M), 1);
 pilotInts = bi2de(reshape(pilotBits, log2(cfg.M), []).', 'left-msb');
 cfg.PilotSymbols = pskmod(pilotInts, cfg.M, pi / cfg.M);
 
-% chanCoeffs = randn(cfg.chanNumTaps, 1) + 1j * randn(cfg.chanNumTaps, 1);
+% nChanTaps = 4;
+% chanCoeffs = randn(nChanTaps, 1) + 1j * randn(nChanTaps, 1);
 % chanCoeffs = chanCoeffs / norm(chanCoeffs);
 % channelModel = @(waveform, snrDb) conv(awgn(waveform, snrDb, 'measured'), chanCoeffs, 'same');
 
@@ -35,7 +36,6 @@ chanLM = stdchan("iturHFLM", cfg.sampRate, cfg.fMax);
 chanLM.RandomStream = "mt19937ar with seed";
 chanLM.Seed = 9999;
 chanLM.PathGainsOutputPort = false;
-% chanLM.Visualization = "Impulse response";
 channelModel = @(waveform, snrDb) chanLM(awgn(waveform, snrDb, 'measured'));
 
 modulator = TxModulator('Cfg', cfg);
@@ -51,7 +51,7 @@ berRlsCoded = zeros(numel(snrPoints), cfg.numFrames);
 
 for sIdx = 1:numel(snrPoints)
     snrDb = snrPoints(sIdx);
-    for frameIdx = 1:cfg.numFrames
+    parfor frameIdx = 1:cfg.numFrames
         dataBits = randi([0 1], cfg.numDataSymbols * log2(cfg.M)/2, 1);
         codedBits = conv_encode_rate12(dataBits, generators);
         [txWaveform, frameSymbols] = modulator(codedBits);
