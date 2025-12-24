@@ -8,7 +8,6 @@ classdef ChannelEqualizer < matlab.System
         stepSize = 5e-2;
         forgetFactor = .99
         initInvCorr = 1e-2
-
         measurementNoise = 1e-3
         processNoise = 1e-5
     end
@@ -19,6 +18,8 @@ classdef ChannelEqualizer < matlab.System
         ffDelayLine
         fbDelayLine
         P
+        Q
+        R
         midTapIndex
 
         measuredNoise = []
@@ -47,9 +48,13 @@ classdef ChannelEqualizer < matlab.System
             obj.ffDelayLine = complex(zeros(obj.nFeedforwardTaps,1));
             obj.fbDelayLine = complex(zeros(obj.nFeedbackTaps,1));
 
-            if obj.isRls() || obj.isKalman()
-                totalTaps = obj.nFeedbackTaps + obj.nFeedforwardTaps;
+            totalTaps = obj.nFeedbackTaps + obj.nFeedforwardTaps;
+            if obj.isRls()
                 obj.P = (1/obj.initInvCorr)*eye(totalTaps);
+            elseif obj.isKalman()
+                obj.P = (1/obj.initInvCorr)*eye(totalTaps);
+                obj.Q = obj.processNoise * eye(totalTaps);
+                obj.R = obj.measurementNoise;
             else
                 obj.P = [];
             end
@@ -126,7 +131,20 @@ classdef ChannelEqualizer < matlab.System
 
             elseif obj.isKalman()
                 u = [obj.ffDelayLine; -obj.fbDelayLine];
-                
+                predP = obj.P + obj.Q;
+                denom = real(u' * predP * u) + obj.R;
+                K = predP * u / denom;
+
+                w = [obj.ffWeights; obj.fbWeights] + K*conj(symbErr);
+                obj.ffWeights = w(1:obj.nFeedforwardTaps);
+                obj.fbWeights = w(obj.nFeedforwardTaps + 1: end);
+
+                obj.P = predP - K * (u' * predP);
+
+                % Josepth Stabilized Form
+                % iMat = eye(obj.nFeedforwardTaps + obj.nFeedbackTaps);
+                % newP = (iMat - K * u') * predP * (iMat - K * u')' + K * obj.R * K';
+                % obj.P = (newP + newP')/2; 
             else
                 obj.ffWeights = obj.ffWeights + obj.stepSize * conj(symbErr) * obj.ffDelayLine;
                 obj.fbWeights = obj.fbWeights - obj.stepSize * conj(symbErr) * obj.fbDelayLine;

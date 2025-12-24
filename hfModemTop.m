@@ -2,8 +2,8 @@
 close all; clc; clear;
 
 cfg.M = 8;
-cfg.numDataSymbols = 64;
-cfg.numPilotSymbols = 64;
+cfg.numDataSymbols =16;
+cfg.numPilotSymbols = 16;
 cfg.numBlankSymbols = 16;
 cfg.samplesPerSymbol = 4;
 cfg.rolloff = 0.25;
@@ -42,10 +42,12 @@ modulator = TxModulator('Cfg', cfg);
 
 demodLms = RxDemodulator('Cfg', cfg, 'EqualizerAlgorithm', 'LMS');
 demodRls = RxDemodulator('Cfg', cfg, 'EqualizerAlgorithm', 'RLS');
+demodKalman = RxDemodulator('Cfg', cfg, 'EqualizerAlgorithm', 'Kalman');
 
 snrPoints = cfg.snrDb(:);
 berLms = zeros(numel(snrPoints), cfg.numFrames);
 berRls = zeros(numel(snrPoints), cfg.numFrames);
+berKalman = zeros(numel(snrPoints), cfg.numFrames);
 berLmsCoded = zeros(numel(snrPoints), cfg.numFrames);
 berRlsCoded = zeros(numel(snrPoints), cfg.numFrames);
 
@@ -60,31 +62,39 @@ for sIdx = 1:numel(snrPoints)
 
         [rcvdBitsLms, ~, errHistLms] = demodLms(rxWaveform);
         [rcvdBitsRls, ~, errHistRls] = demodRls(rxWaveform);
+        [rcvdBitsKalman, ~, errHistKalman] = demodKalman(rxWaveform);
 
         rxBitsLms = viterbi_decode_rate12(rcvdBitsLms, next_state, out_bits);
         rxBitsRls = viterbi_decode_rate12(rcvdBitsRls, next_state, out_bits);
+        rxBitsKalman = viterbi_decode_rate12(rcvdBitsKalman, next_state, out_bits);
 
         berLms(sIdx, frameIdx) = mean(rcvdBitsLms ~= codedBits);
         berRls(sIdx, frameIdx) = mean(rcvdBitsRls ~= codedBits);
+        berKalman(sIdx, frameIdx) = mean(rcvdBitsKalman ~= codedBits);
         berCodedLms(sIdx, frameIdx) = mean(rxBitsLms ~= dataBits);
         berCodedRls(sIdx, frameIdx) = mean(rxBitsRls ~= dataBits);
+        berCodedKalman(sIdx, frameIdx) = mean(rxBitsKalman ~= dataBits);
     end
 end
 
 berLmsMean = mean(berLms, 2);
 berRlsMean = mean(berRls, 2);
+berKalmanMean = mean(berKalman, 2);
 berCodedLmsMean = mean(berCodedLms,2);
 berCodedRlsMean = mean(berCodedRls,2);
+berCodedKalmanMean = mean(berCodedKalman,2);
 
 figure;
 semilogy(cfg.snrDb, berLmsMean,       '-o', 'LineWidth', 1.5, 'MarkerSize', 6); hold on;
 semilogy(cfg.snrDb, berRlsMean,       '-s', 'LineWidth', 1.5, 'MarkerSize', 6);
+semilogy(cfg.snrDb, berKalmanMean,    '-d', 'LineWidth', 1.5, 'MarkerSize', 6);
 semilogy(cfg.snrDb, berCodedLmsMean,  '--^','LineWidth', 1.5, 'MarkerSize', 6);
 semilogy(cfg.snrDb, berCodedRlsMean,  '--v','LineWidth', 1.5, 'MarkerSize', 6);
+semilogy(cfg.snrDb, berCodedKalmanMean,'--x','LineWidth', 1.5, 'MarkerSize', 6);
 xlabel('SNR (dB)', 'FontSize', 12, 'FontWeight', 'bold');
 ylabel('Bit Error Rate (BER)', 'FontSize', 12, 'FontWeight', 'bold');
-title('BER vs SNR for LMS / RLS (Coded & Uncoded)', 'FontSize', 13);
-legend({'LMS', 'RLS', 'Coded LMS', 'Coded RLS'}, ...
+title('BER vs SNR for LMS / RLS / Kalman (Coded & Uncoded)', 'FontSize', 13);
+legend({'LMS', 'RLS', 'Kalman', 'Coded LMS', 'Coded RLS', 'Coded Kalman'}, ...
        'Location', 'southwest', 'FontSize', 10);
 legend boxoff;
 grid on;
