@@ -60,7 +60,7 @@ classdef ChannelEqualizer < matlab.System
             end
         end
 
-        function [eqSymbs, errHist] = stepImpl(obj, rxSymbs, trngSymbs, frameSymbType)
+        function [eqSymbs, chanTaps] = stepImpl(obj, rxSymbs, trngSymbs, frameSymbType)
             totalSymbs = numel(frameSymbType);
             totalSamps = totalSymbs * obj.nSampsPerSymb;
 
@@ -103,7 +103,7 @@ classdef ChannelEqualizer < matlab.System
                 end
             end
             eqSymbs = eqSamps(1:obj.nSampsPerSymb:end);
-            % chanTaps = [obj.fbWeights;obj.ffWeights;]         % NOTE: Consider passing out 
+            chanTaps = [obj.fbWeights;obj.ffWeights;] ;        
         end
 
         function num = getNumInputsImpl(~)
