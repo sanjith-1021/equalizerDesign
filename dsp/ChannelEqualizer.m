@@ -1,15 +1,15 @@
 classdef ChannelEqualizer < matlab.System
     properties
         algorithm = 'LMS';
-        nFeedforwardTaps = 20;
+        nFeedforwardTaps = 10;
         nFeedbackTaps = 10;
         nSampsPerSymb = 4;
         modOrder = 8;
-        stepSize = 5e-2;
-        forgetFactor = .99
-        initInvCorr = 1e-2
-        measurementNoise = 1e-3
-        processNoise = 1e-5
+        stepSize = 1e-2;
+        forgetFactor = .95
+        initInvCorr = 5e-2
+        measurementNoise = 1e-2
+        processNoise = 1e-4
     end
 
     properties (Access = private)
@@ -60,7 +60,7 @@ classdef ChannelEqualizer < matlab.System
             end
         end
 
-        function [eqSymbs, chanTaps] = stepImpl(obj, rxSymbs, trngSymbs, frameSymbType)
+        function [eqSymbs, errHist] = stepImpl(obj, rxSymbs, trngSymbs, frameSymbType)
             totalSymbs = numel(frameSymbType);
             totalSamps = totalSymbs * obj.nSampsPerSymb;
 
@@ -95,15 +95,17 @@ classdef ChannelEqualizer < matlab.System
 
                         if symbType ~= 0 
                             symbErr = hdSymb - yi;
-                            obj.updateWeights(symbErr);
                             errHist(symbIdx)=symbErr;
+                            if symbType == 1, 
+                                obj.updateWeights(symbErr); 
+                            end
                             obj.fbDelayLine = [hdSymb;obj.fbDelayLine(1: end-1)];
                         end
                     end
                 end
             end
             eqSymbs = eqSamps(1:obj.nSampsPerSymb:end);
-            chanTaps = [obj.fbWeights;obj.ffWeights;] ;        
+            % chanTaps = [obj.fbWeights;obj.ffWeights;] ;        
         end
 
         function num = getNumInputsImpl(~)

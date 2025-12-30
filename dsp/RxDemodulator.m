@@ -41,12 +41,12 @@ classdef RxDemodulator < matlab.System
                 'modOrder', c.M);
         end
 
-        function [rxBits, eqSymbs, chanTaps] = stepImpl(obj, rxWaveform)
+        function [rxBits, eqSymbs, errHist] = stepImpl(obj, rxWaveform)
             matched = conv(rxWaveform, obj.RrcFilter, 'same');
 
-            [eqSymbs, chanTaps] = obj.EqObj(matched, obj.PilotSymbols, obj.FrameSymbolType);
-            reset(obj.EqObj);
-
+            [eqSymbs, errHist] = obj.EqObj(matched, obj.PilotSymbols, obj.FrameSymbolType);
+            
+            % reset(obj.EqObj);
             dataEq = eqSymbs(obj.FrameSymbolType == 2);
             rxInts = pskdemod(dataEq, obj.Cfg.M, pi / obj.Cfg.M);
             rxBits = de2bi(rxInts, obj.BitsPerSymbol, 'left-msb').';
