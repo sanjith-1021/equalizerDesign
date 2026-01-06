@@ -26,9 +26,9 @@ switch lower(presetName)
         cfg = baseCfg();
         cfg.nTrngSymbs02 = 16;
         cfg.nDataSymbs = 32;
-        cfg.snrDb = 10;
+        cfg.snrDb = 30;
         cfg.nSlots = 2;
-        cfg.M = 4;
+        cfg.M = 8;
 
     otherwise
         error('Unknown preset: %s', presetName);

@@ -3,6 +3,7 @@ close all; clc; clear;
 
 scriptDir = fileparts(mfilename('fullpath'));
 addpath(fullfile(scriptDir, 'config'));
+addpath(fullfile(scriptDir, 'libs'));
 cfg = presets('basic-run');
 
 snrDb = cfg.snrDb;
@@ -21,7 +22,7 @@ channelModel = @(waveform) chanLM(awgn(waveform, snrDb, 'measured'));
 
 
 rng(cfg.seed);
-trngBits01 = randi([0 1], cfg.nTrngSymbs01 * log2(cfg.M), 1);
+trngBits01 = pnBits(cfg.nTrngSymbs01 * log2(cfg.M), [10 7], cfg.seed);
 trngBits02 = randi([0 1], cfg.nTrngSymbs02 * log2(cfg.M), 1);
 trngInts01 = bi2de(reshape(trngBits01, log2(cfg.M), []).', 'left-msb');
 trngInts02 = bi2de(reshape(trngBits02, log2(cfg.M), []).', 'left-msb');
