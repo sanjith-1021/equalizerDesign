@@ -37,18 +37,20 @@ berCodedKalmanMean = zeros(numel(snrPoints), 1);
 parfor sIdx = 1:numel(snrPoints)
     snrDb = snrPoints(sIdx);
 
-    rng(rndSeed);
-    chanLM = stdchan('iturHFLM', cfg.sampRate, cfg.fMax);
-    chanLM.RandomStream = 'mt19937ar with seed';
-    chanLM.Seed = 9999;
-    chanLM.PathGainsOutputPort = false;
-    reset(chanLM);
-    channelModel = @(waveform) chanLM(awgn(waveform, snrDb, 'measured'));
+    % channelModel = @(waveform) awgn(waveform, snrDb, 'measured');
 
-    % nChanTaps = 5;
-    % chanCoeffs = randn(nChanTaps, 1) + 1j * randn(nChanTaps, 1);
-    % chanCoeffs = chanCoeffs / norm(chanCoeffs);
-    % channelModel = @(waveform) conv(awgn(waveform, snrDb, 'measured'), chanCoeffs, 'same');
+    nChanTaps = 5;
+    chanCoeffs = randn(nChanTaps, 1) + 1j * randn(nChanTaps, 1);
+    chanCoeffs = chanCoeffs / norm(chanCoeffs);
+    channelModel = @(waveform) conv(awgn(waveform, snrDb, 'measured'), chanCoeffs, 'same');
+
+    % rng(rndSeed);
+    % chanLM = stdchan('iturHFLM', cfg.sampRate, cfg.fMax);
+    % chanLM.RandomStream = 'mt19937ar with seed';
+    % chanLM.Seed = 9999;
+    % chanLM.PathGainsOutputPort = false;
+    % reset(chanLM);
+    % channelModel = @(waveform) awgn(chanLM(waveform), snrDb, 'measured');
 
     modulator = TxModulator('Cfg', cfg);
     demodLms = RxDemodulator('Cfg', cfg, 'EqualizerAlgorithm', 'LMS');
