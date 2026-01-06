@@ -8,8 +8,8 @@ classdef CommDfeEqualizer < matlab.System
         StepSize = 5e-2;
         Lambda = 0.99;
         Delta = 1e-1;
-        SamplesPerSymbol = 4;
-        SampleOffset = 1;
+        SampsPerSymb = 4;
+        SampOffset = 1;
         ModOrder = 8;
     end
 
@@ -57,36 +57,36 @@ classdef CommDfeEqualizer < matlab.System
             end
         end
 
-        function [eqSymbols, errHist] = stepImpl(obj, matched, pilotSymbols, frameSymbType)
-            totalSymbols = numel(frameSymbType);
-            totalSamples = totalSymbols * obj.SamplesPerSymbol;
+        function [eqSymbs, errHist] = stepImpl(obj, matched, pilotSymbs, frameSymbType)
+            totalSymbs = numel(frameSymbType);
+            totalSamps = totalSymbs * obj.SampsPerSymb;
 
-            if obj.SampleOffset < 1 || obj.SampleOffset > obj.SamplesPerSymbol
-                error('CommDfeEqualizer:SampleOffset', 'SampleOffset must be between 1 and SamplesPerSymbol.');
+            if obj.SampOffset < 1 || obj.SampOffset > obj.SampsPerSymb
+                error('CommDfeEqualizer:SampOffset', 'SampOffset must be between 1 and SampsPerSymb.');
             end
 
-            symSamples = matched(obj.SampleOffset:obj.SamplesPerSymbol:end);
-            symSamples = symSamples(1:totalSymbols);
+            symSamps = matched(obj.SampOffset:obj.SampsPerSymb:end);
+            symSamps = symSamps(1:totalSymbs);
 
-            trainingFlag = false(totalSymbols, 1);
-            trainingSymbols = complex(zeros(totalSymbols, 1));
+            trngFlag = false(totalSymbs, 1);
+            trngSymbs = complex(zeros(totalSymbs, 1));
             pilotIdx = 0;
 
-            for symIdx = 1:totalSymbols
+            for symIdx = 1:totalSymbs
                 switch frameSymbType(symIdx)
                     case 1
                         pilotIdx = pilotIdx + 1;
-                        trainingFlag(symIdx) = true;
-                        trainingSymbols(symIdx) = pilotSymbols(pilotIdx);
+                        trngFlag(symIdx) = true;
+                        trngSymbs(symIdx) = pilotSymbs(pilotIdx);
                     otherwise
-                        trainingFlag(symIdx) = false;
+                        trngFlag(symIdx) = false;
                 end
             end
 
-            [eqSymbols, errVec] = obj.DfeObj(symSamples, trainingSymbols, trainingFlag);
+            [eqSymbs, errVec] = obj.DfeObj(symSamps, trngSymbs, trngFlag);
 
-            errHist = complex(zeros(totalSamples, 1));
-            errHist(obj.SampleOffset:obj.SamplesPerSymbol:end) = errVec;
+            errHist = complex(zeros(totalSamps, 1));
+            errHist(obj.SampOffset:obj.SampsPerSymb:end) = errVec;
         end
 
         function num = getNumInputsImpl(~)

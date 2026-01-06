@@ -4,9 +4,9 @@ classdef RxDemodulator < matlab.System
     properties
         Cfg
         EqualizerAlgorithm = 'LMS';
-        PilotSymbols = [];
-        FrameSymbolType = [];
-        BitsPerSymbol
+        KnownSymbs = [];
+        slotSymbType = [];
+        BitsPerSymb
     end
 
 
@@ -22,7 +22,7 @@ classdef RxDemodulator < matlab.System
             end
         end
 
-        function val = get.BitsPerSymbol(obj)
+        function val = get.BitsPerSymb(obj)
             val = log2(obj.Cfg.M);
         end
 
@@ -31,25 +31,30 @@ classdef RxDemodulator < matlab.System
     methods (Access = protected)
         function setupImpl(obj, ~)
             c = obj.Cfg;
-            obj.RrcFilter = rcosdesign(c.rolloff, c.filterSpan, c.samplesPerSymbol, 'sqrt');
-            obj.FrameSymbolType = [ zeros(c.numBlankSymbols, 1);ones(c.numPilotSymbols, 1);2 * ones(c.numDataSymbols, 1); zeros(c.numBlankSymbols, 1) ];
-            obj.PilotSymbols = c.PilotSymbols;
+            obj.RrcFilter = rcosdesign(c.rolloff, c.filterSpan, c.sampsPerSymb, 'sqrt');
+            hopTypes = repmat([2 * ones(c.nTrngSymbs02, 1); ...
+                               3 * ones(c.nDataSymbs, 1)], c.nHops, 1);
+            obj.slotSymbType = [zeros(c.nBlankSymbs, 1); ...
+                                   ones(c.nTrngSymbs01, 1); ...
+                                   hopTypes; ...
+                                   zeros(c.nBlankSymbs, 1)];
+            obj.KnownSymbs = [c.TrngSeq01; repmat(c.TrngSeq02, c.nHops, 1)];
 
             obj.EqObj = ChannelEqualizer( ...
                 'algorithm', obj.EqualizerAlgorithm, ...
-                'nSampsPerSymb', c.samplesPerSymbol, ...
+                'nSampsPerSymb', c.sampsPerSymb, ...
                 'modOrder', c.M);
         end
 
         function [rxBits, eqSymbs, errHist] = stepImpl(obj, rxWaveform)
             matched = conv(rxWaveform, obj.RrcFilter, 'same');
 
-            [eqSymbs, errHist] = obj.EqObj(matched, obj.PilotSymbols, obj.FrameSymbolType);
+            reset(obj.EqObj);
+            [eqSymbs, errHist] = obj.EqObj(matched, obj.KnownSymbs, obj.slotSymbType);
             
-            % reset(obj.EqObj);
-            dataEq = eqSymbs(obj.FrameSymbolType == 2);
+            dataEq = eqSymbs(obj.slotSymbType == 3);
             rxInts = pskdemod(dataEq, obj.Cfg.M, pi / obj.Cfg.M);
-            rxBits = de2bi(rxInts, obj.BitsPerSymbol, 'left-msb').';
+            rxBits = de2bi(rxInts, obj.BitsPerSymb, 'left-msb').';
             rxBits = rxBits(:);
         end
 

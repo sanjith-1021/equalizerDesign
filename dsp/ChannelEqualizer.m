@@ -1,8 +1,8 @@
 classdef ChannelEqualizer < matlab.System
     properties
         algorithm = 'LMS';
-        nFeedforwardTaps = 10;
-        nFeedbackTaps = 10;
+        nFeedforwardTaps = 20;
+        nFeedbackTaps = 20;
         nSampsPerSymb = 4;
         modOrder = 8;
         stepSize = 1e-3;
@@ -83,10 +83,10 @@ classdef ChannelEqualizer < matlab.System
                         symbType = frameSymbType(symbIdx);
 
                         switch symbType
-                            case 1 
+                            case {1, 2} 
                                 trngSymbCnt = trngSymbCnt + 1;
                                 hdSymb = trngSymbs(trngSymbCnt);
-                            case 2
+                            case 3
                                 dInt = pskdemod(yi, obj.modOrder, pi/obj.modOrder);
                                 hdSymb = pskmod(dInt, obj.modOrder, pi/obj.modOrder);
                             otherwise

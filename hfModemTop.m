@@ -8,56 +8,44 @@ cfg = presets('ber-sweep');
 [next_state, out_bits] = build_trellis_rate12(cfg.generators);
 
 rng(cfg.seed);
-pilotBits = randi([0 1], cfg.numPilotSymbols * log2(cfg.M), 1);
-pilotInts = bi2de(reshape(pilotBits, log2(cfg.M), []).', 'left-msb');
-cfg.PilotSymbols = pskmod(pilotInts, cfg.M, pi / cfg.M);
+trngBits01 = randi([0 1], cfg.nTrngSymbs01 * log2(cfg.M), 1);
+trngBits02 = randi([0 1], cfg.nTrngSymbs02 * log2(cfg.M), 1);
+trngInts01 = bi2de(reshape(trngBits01, log2(cfg.M), []).', 'left-msb');
+trngInts02 = bi2de(reshape(trngBits02, log2(cfg.M), []).', 'left-msb');
+cfg.TrngSeq01 = pskmod(trngInts01, cfg.M, pi / cfg.M);
+cfg.TrngSeq02 = pskmod(trngInts02, cfg.M, pi / cfg.M);
+
+nChanTaps = 4;
+chanCoeffs = randn(nChanTaps, 1) + 1j * randn(nChanTaps, 1);
+chanCoeffs = chanCoeffs / norm(chanCoeffs);
+channelModel = @(waveform, snrDb) conv(awgn(waveform, snrDb, 'measured'), chanCoeffs, 'same');
 
 snrPoints = cfg.snrDb(:);
-numFrames = cfg.numFrames;
+nSlots = cfg.nSlots;
 rndSeed = cfg.seed;
 
-berLmsMean = zeros(numel(snrPoints),1);
-berRlsMean = zeros(numel(snrPoints),1);
-berKalmanMean = zeros(numel(snrPoints), 1);
-berCodedLmsMean = zeros(numel(snrPoints), 1);
-berCodedRlsMean = zeros(numel(snrPoints), 1);
-berCodedKalmanMean = zeros(numel(snrPoints), 1);
+berLms = zeros(numel(snrPoints),nSlots);
+berRls = zeros(numel(snrPoints),nSlots);
+berKalman = zeros(numel(snrPoints), nSlots);
+berCodedLms = zeros(numel(snrPoints), nSlots);
+berCodedRls = zeros(numel(snrPoints), nSlots);
+berCodedKalman = zeros(numel(snrPoints), nSlots);
 
-parfor sIdx = 1:numel(snrPoints)
-    snrDb = snrPoints(sIdx);
+for snrIdx = 1:numel(snrPoints)
+    snrDb = snrPoints(snrIdx);
 
-    % channelModel = @(waveform) awgn(waveform, snrDb, 'measured');
+    parfor slotIdx = 1:nSlots
+        
+        modulator = TxModulator('Cfg', cfg);
+        demodLms = RxDemodulator('Cfg', cfg, 'EqualizerAlgorithm', 'LMS');
+        demodRls = RxDemodulator('Cfg', cfg, 'EqualizerAlgorithm', 'RLS');
+        demodKalman = RxDemodulator('Cfg', cfg, 'EqualizerAlgorithm', 'Kalman');
 
-    chanCoeffs = randn(cfg.nChanTaps, 1) + 1j * randn(cfg.nChanTaps, 1);
-    chanCoeffs = chanCoeffs / norm(chanCoeffs);
-    channelModel = @(waveform) conv(awgn(waveform, snrDb, 'measured'), chanCoeffs, 'same');
-
-    % rng(rndSeed);
-    % chanLM = stdchan('iturHFLM', cfg.sampRate, cfg.fMax);
-    % chanLM.RandomStream = 'mt19937ar with seed';
-    % chanLM.Seed = 9999;
-    % chanLM.PathGainsOutputPort = false;
-    % reset(chanLM);
-    % channelModel = @(waveform) awgn(chanLM(waveform), snrDb, 'measured');
-
-    modulator = TxModulator('Cfg', cfg);
-    demodLms = RxDemodulator('Cfg', cfg, 'EqualizerAlgorithm', 'LMS');
-    demodRls = RxDemodulator('Cfg', cfg, 'EqualizerAlgorithm', 'RLS');
-    demodKalman = RxDemodulator('Cfg', cfg, 'EqualizerAlgorithm', 'Kalman');
-
-    berLms = zeros(1, numFrames);
-    berRls = zeros(1, numFrames);
-    berKalman = zeros(1, numFrames);
-    berCodedLms = zeros(1, numFrames);
-    berCodedRls = zeros(1, numFrames);
-    berCodedKalman = zeros(1, numFrames);
-
-    for frameIdx = 1:numFrames
-        dataBits = randi([0 1], cfg.numDataSymbols * log2(cfg.M)/2, 1);
+        dataBits = randi([0 1], cfg.nHops * cfg.nDataSymbs * log2(cfg.M)/2, 1);
         codedBits = conv_encode_rate12(dataBits, cfg.generators);
         txWaveform = modulator(codedBits);
 
-        rxWaveform = channelModel(txWaveform);
+        rxWaveform = channelModel(txWaveform, snrDb);
 
         [rcvdBitsLms, ~, ~] = demodLms(rxWaveform);
         [rcvdBitsRls, ~, ~] = demodRls(rxWaveform);
@@ -67,20 +55,21 @@ parfor sIdx = 1:numel(snrPoints)
         rxBitsRls = viterbi_decode_rate12(rcvdBitsRls, next_state, out_bits);
         rxBitsKalman = viterbi_decode_rate12(rcvdBitsKalman, next_state, out_bits);
 
-        berLms(frameIdx) = mean(rcvdBitsLms ~= codedBits);
-        berRls(frameIdx) = mean(rcvdBitsRls ~= codedBits);
-        berKalman(frameIdx) = mean(rcvdBitsKalman ~= codedBits);
-        berCodedLms(frameIdx) = mean(rxBitsLms ~= dataBits);
-        berCodedRls(frameIdx) = mean(rxBitsRls ~= dataBits);
-        berCodedKalman(frameIdx) = mean(rxBitsKalman ~= dataBits);
+        berLms(snrIdx, slotIdx) = mean(rcvdBitsLms ~= codedBits);
+        berRls(snrIdx, slotIdx) = mean(rcvdBitsRls ~= codedBits);
+        berKalman(snrIdx, slotIdx) = mean(rcvdBitsKalman ~= codedBits);
+        berCodedLms(snrIdx, slotIdx) = mean(rxBitsLms ~= dataBits);
+        berCodedRls(snrIdx, slotIdx) = mean(rxBitsRls ~= dataBits);
+        berCodedKalman(snrIdx, slotIdx) = mean(rxBitsKalman ~= dataBits);
     end
-    berLmsMean(sIdx) = mean(berLms);
-    berRlsMean(sIdx) = mean(berRls);
-    berKalmanMean(sIdx) = mean(berKalman);
-    berCodedLmsMean(sIdx) = mean(berCodedLms);
-    berCodedRlsMean(sIdx) = mean(berCodedRls);
-    berCodedKalmanMean(sIdx) = mean(berCodedKalman);
 end
+
+berLmsMean = mean(berLms, 2);
+berRlsMean = mean(berRls, 2);
+berKalmanMean = mean(berKalman, 2);
+berCodedLmsMean = mean(berCodedLms, 2);
+berCodedRlsMean = mean(berCodedRls, 2);
+berCodedKalmanMean = mean(berCodedKalman, 2);
 
 figure;
 semilogy(cfg.snrDb, berLmsMean,        '-o', 'LineWidth', 1.5, 'MarkerSize', 6); hold on;

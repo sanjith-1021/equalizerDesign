@@ -3,12 +3,13 @@ classdef TxModulator < matlab.System
 
     properties
         Cfg
-        PilotSymbols = [];
+        TrngSeq01 = [];
+        TrngSeq02 = [];
     end
 
     properties (Dependent)
-        BitsPerSymbol
-        FrameSymbolType
+        BitsPerSymb
+        SlotSymbType
     end
 
     properties (Access = private)
@@ -22,34 +23,46 @@ classdef TxModulator < matlab.System
             end
         end
 
-        function val = get.BitsPerSymbol(obj)
+        function val = get.BitsPerSymb(obj)
             val = log2(obj.Cfg.M);
         end
 
-        function val = get.FrameSymbolType(obj)
+        function val = get.SlotSymbType(obj)
             c = obj.Cfg;
-            val = [zeros(c.numBlankSymbols, 1); ...
-                   ones(c.numPilotSymbols, 1); ...
-                   2 * ones(c.numDataSymbols, 1); ...
-                   zeros(c.numBlankSymbols, 1)];
+            hopTypes = repmat([2 * ones(c.nTrngSymbs02, 1); ...
+                               3 * ones(c.nDataSymbs, 1)], c.nHops, 1);
+            val = [zeros(c.nBlankSymbs, 1); ...
+                   ones(c.nTrngSymbs01, 1); ...
+                   hopTypes; ...
+                   zeros(c.nBlankSymbs, 1)];
         end
     end
 
     methods (Access = protected)
         function setupImpl(obj, ~)
             c = obj.Cfg;
-            obj.RrcFilter = rcosdesign(c.rolloff, c.filterSpan, c.samplesPerSymbol, 'sqrt');
-            obj.PilotSymbols = c.PilotSymbols;
+            obj.RrcFilter = rcosdesign(c.rolloff, c.filterSpan, c.sampsPerSymb, 'sqrt');
+            obj.TrngSeq01 = c.TrngSeq01;
+            obj.TrngSeq02 = c.TrngSeq02;
         end
 
-        function [txWaveform, frameSymbols] = stepImpl(obj, dataBits)
+        function [txWaveform, frameSymbs] = stepImpl(obj, dataBits)
             c = obj.Cfg;
             dataBits = dataBits(:);
-            dataInts = bi2de(reshape(dataBits, obj.BitsPerSymbol, []).', 'left-msb');
-            dataSymbols = pskmod(dataInts, c.M, pi / c.M);
+            dataInts = bi2de(reshape(dataBits, obj.BitsPerSymb, []).', 'left-msb');
+            dataSymbs = pskmod(dataInts, c.M, pi / c.M);
 
-            frameSymbols = [zeros(c.numBlankSymbols, 1); obj.PilotSymbols; dataSymbols; zeros(c.numBlankSymbols, 1)];
-            upsampled = upsample(frameSymbols, c.samplesPerSymbol);
+            nDataSymbs = c.nHops * c.nDataSymbs;
+            if numel(dataSymbs) ~= nDataSymbs
+                error('Expected %d data symbols, got %d.', nDataSymbs, numel(dataSymbs));
+            end
+            dataSymbs = reshape(dataSymbs, c.nDataSymbs, c.nHops);
+            hopSymbs = [repmat(obj.TrngSeq02, 1, c.nHops); dataSymbs];
+            frameSymbs = [zeros(c.nBlankSymbs, 1); ...
+                            obj.TrngSeq01; ...
+                            hopSymbs(:); ...
+                            zeros(c.nBlankSymbs, 1)];
+            upsampled = upsample(frameSymbs, c.sampsPerSymb);
             txWaveform = conv(upsampled, obj.RrcFilter, 'same');
         end
 
