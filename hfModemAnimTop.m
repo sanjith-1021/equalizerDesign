@@ -15,18 +15,19 @@ cfg.TrngSeq02 = pskmod(trngInts02, cfg.M, pi / cfg.M);
 
 rrc = rcosdesign(cfg.rolloff, cfg.filterSpan, cfg.sampsPerSymb, 'sqrt').';
 
-% rng(cfg.seed);
-% chanLM = stdchan('iturHFLM', cfg.sampRate, cfg.fMax);
-% chanLM.RandomStream = 'mt19937ar with seed';
-% chanLM.Seed = 9999;
-% chanLM.PathGainsOutputPort = false;
-% reset(chanLM);
-% channelModel = @(waveform) chanLM(awgn(waveform, cfg.snrDb, 'measured'));
+% nChanTaps = 4;
+% chanCoeffs = randn(nChanTaps, 1) + 1j * randn(nChanTaps, 1);
+% chanCoeffs = chanCoeffs / norm(chanCoeffs);
+% channelModel = @(waveform) conv(awgn(waveform, cfg.snrDb, 'measured'), chanCoeffs, 'same');
 
-nChanTaps = 4;
-chanCoeffs = randn(nChanTaps, 1) + 1j * randn(nChanTaps, 1);
-chanCoeffs = chanCoeffs / norm(chanCoeffs);
-channelModel = @(waveform) conv(awgn(waveform, cfg.snrDb, 'measured'), chanCoeffs, 'same');
+
+chanLM = stdchan('iturHFLM', cfg.sampRate, cfg.fMax);
+chanLM.RandomStream = 'mt19937ar with seed';
+chanLM.Seed = 9999;
+chanLM.PathGainsOutputPort = false;
+reset(chanLM);
+channelModel = @(waveform) chanLM(awgn(waveform, cfg.snrDb, 'measured'));
+
 
 modulator = TxModulator('Cfg', cfg);
 demodLms = RxDemodulator('Cfg', cfg, 'EqualizerAlgorithm', 'LMS');

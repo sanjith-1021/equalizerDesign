@@ -15,10 +15,18 @@ trngInts02 = bi2de(reshape(trngBits02, log2(cfg.M), []).', 'left-msb');
 cfg.TrngSeq01 = pskmod(trngInts01, cfg.M, pi / cfg.M);
 cfg.TrngSeq02 = pskmod(trngInts02, cfg.M, pi / cfg.M);
 
-nChanTaps = 4;
-chanCoeffs = randn(nChanTaps, 1) + 1j * randn(nChanTaps, 1);
-chanCoeffs = chanCoeffs / norm(chanCoeffs);
-channelModel = @(waveform, snrDb) conv(awgn(waveform, snrDb, 'measured'), chanCoeffs, 'same');
+% nChanTaps = 4;
+% chanCoeffs = randn(nChanTaps, 1) + 1j * randn(nChanTaps, 1);
+% chanCoeffs = chanCoeffs / norm(chanCoeffs);
+% channelModel = @(waveform, snrDb) conv(awgn(waveform, snrDb, 'measured'), chanCoeffs, 'same');
+
+chanLM = stdchan("iturHFLM", cfg.sampRate, cfg.fMax);
+chanLM.RandomStream = "mt19937ar with seed";
+chanLM = stdchan('iturHFLM', cfg.sampRate, cfg.fMax);
+chanLM.RandomStream = 'mt19937ar with seed';
+chanLM.Seed = 9999;
+chanLM.PathGainsOutputPort = false;
+channelModel = @(waveform, snrDb) chanLM(awgn(waveform, snrDb, 'measured'));
 
 snrPoints = cfg.snrDb(:);
 nSlots = cfg.nSlots;

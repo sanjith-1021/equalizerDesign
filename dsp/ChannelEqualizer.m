@@ -2,13 +2,13 @@ classdef ChannelEqualizer < matlab.System
     properties
         algorithm = 'LMS';
         nFeedforwardTaps = 20;
-        nFeedbackTaps = 20;
+        nFeedbackTaps = 8;
         nSampsPerSymb = 4;
         modOrder = 8;
         stepSize = 1e-3;
         forgetFactor = .95
         initInvCorr = 5e-2
-        measurementNoise = 1e-2
+        measurementNoise = 1e-4
         processNoise = 1e-4
     end
 
@@ -96,7 +96,7 @@ classdef ChannelEqualizer < matlab.System
                         if symbType ~= 0 
                             symbErr = hdSymb - yi;
                             errHist(symbIdx)=symbErr;
-                            if symbType ~= 0, obj.updateWeights(symbErr); end
+                            if symbType == 1 || symbType == 2, obj.updateWeights(symbErr); end
                             obj.fbDelayLine = [hdSymb;obj.fbDelayLine(1: end-1)];
                         end
                     end
