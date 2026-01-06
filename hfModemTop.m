@@ -1,22 +1,11 @@
 % HF modem end-to-end BER sweep (no animation).
 close all; clc; clear;
 
-cfg.M = 8;
-cfg.numDataSymbols = 16;
-cfg.numPilotSymbols = 32;
-cfg.numBlankSymbols = 64;
-cfg.samplesPerSymbol = 4;
-cfg.rolloff = 0.25;
-cfg.filterSpan = 8;
-cfg.snrDb = 0:4:30;
-cfg.sampRate = 9600;
-cfg.numFrames = 100;
-cfg.fMax = 1;
-cfg.seed = 101;
+scriptDir = fileparts(mfilename('fullpath'));
+addpath(fullfile(scriptDir, 'config'));
+cfg = presets('ber-sweep');
 
-generators = [1 1 1 1 0 0 1;  % G0 = 171
-              1 0 1 1 0 1 1]; % G1 = 133
-[next_state, out_bits] = build_trellis_rate12(generators);
+[next_state, out_bits] = build_trellis_rate12(cfg.generators);
 
 rng(cfg.seed);
 pilotBits = randi([0 1], cfg.numPilotSymbols * log2(cfg.M), 1);
@@ -39,8 +28,7 @@ parfor sIdx = 1:numel(snrPoints)
 
     % channelModel = @(waveform) awgn(waveform, snrDb, 'measured');
 
-    nChanTaps = 5;
-    chanCoeffs = randn(nChanTaps, 1) + 1j * randn(nChanTaps, 1);
+    chanCoeffs = randn(cfg.nChanTaps, 1) + 1j * randn(cfg.nChanTaps, 1);
     chanCoeffs = chanCoeffs / norm(chanCoeffs);
     channelModel = @(waveform) conv(awgn(waveform, snrDb, 'measured'), chanCoeffs, 'same');
 
@@ -66,7 +54,7 @@ parfor sIdx = 1:numel(snrPoints)
 
     for frameIdx = 1:numFrames
         dataBits = randi([0 1], cfg.numDataSymbols * log2(cfg.M)/2, 1);
-        codedBits = conv_encode_rate12(dataBits, generators);
+        codedBits = conv_encode_rate12(dataBits, cfg.generators);
         txWaveform = modulator(codedBits);
 
         rxWaveform = channelModel(txWaveform);

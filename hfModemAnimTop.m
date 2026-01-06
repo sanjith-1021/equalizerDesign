@@ -1,22 +1,9 @@
 % HF modem tap animation with a static custom channel.
 close all; clc; clear;
 
-cfg.M = 8;
-cfg.numDataSymbols = 64;
-cfg.numPilotSymbols = 32;
-cfg.numBlankSymbols = 8;
-cfg.samplesPerSymbol = 4;
-cfg.rolloff = 0.25;
-cfg.filterSpan = 8;
-cfg.sampRate = 9600;
-cfg.numFrames = 100;
-cfg.snrDb = 25;
-cfg.seed = 101;
-cfg.animatePause = .2;
-cfg.fMax = 1;
-
-generators = [1 1 1 1 0 0 1;  % G0 = 171
-              1 0 1 1 0 1 1]; % G1 = 133
+scriptDir = fileparts(mfilename('fullpath'));
+addpath(fullfile(scriptDir, 'config'));
+cfg = presets('tap-anim');
 
 rng(cfg.seed);
 pilotBits = randi([0 1], cfg.numPilotSymbols * log2(cfg.M), 1);
@@ -33,8 +20,7 @@ rrc = rcosdesign(cfg.rolloff, cfg.filterSpan, cfg.samplesPerSymbol, 'sqrt').';
 % reset(chanLM);
 % channelModel = @(waveform) chanLM(awgn(waveform, cfg.snrDb, 'measured'));
 
-nChanTaps = 5;
-chanCoeffs = randn(nChanTaps, 1) + 1j * randn(nChanTaps, 1);
+chanCoeffs = randn(cfg.nChanTaps, 1) + 1j * randn(cfg.nChanTaps, 1);
 chanCoeffs = chanCoeffs / norm(chanCoeffs);
 channelModel = @(waveform) conv(awgn(waveform, cfg.snrDb, 'measured'), chanCoeffs, 'same');
 
@@ -68,7 +54,7 @@ end
 
 for frameIdx = 1:cfg.numFrames
     dataBits = randi([0 1], cfg.numDataSymbols * log2(cfg.M)/2, 1);
-    codedBits = conv_encode_rate12(dataBits, generators);
+    codedBits = conv_encode_rate12(dataBits, cfg.generators);
     txWaveform = modulator(codedBits);
 
     rxWaveform = channelModel(txWaveform);
