@@ -8,7 +8,7 @@ classdef ChannelEqualizer < matlab.System
         stepSize = 1e-3;
         forgetFactor = .95
         initInvCorr = 5e-2
-        measurementNoise = 1e-4
+        measurementNoise = 1e-3
         processNoise = 1e-4
     end
 
@@ -96,7 +96,7 @@ classdef ChannelEqualizer < matlab.System
                         if symbType ~= 0 
                             symbErr = hdSymb - yi;
                             errHist(symbIdx)=symbErr;
-                            if symbType == 1 || symbType == 2, obj.updateWeights(symbErr); end
+                            if symbType ~= 0, obj.updateWeights(symbErr); end
                             obj.fbDelayLine = [hdSymb;obj.fbDelayLine(1: end-1)];
                         end
                     end

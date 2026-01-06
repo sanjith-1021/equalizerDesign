@@ -15,8 +15,8 @@ switch lower(presetName)
 
     case {'tap-anim'}
         cfg = baseCfg();
-        cfg.nTrngSymbs02 = 16;
-        cfg.nDataSymbs = 32;
+        cfg.nTrngSymbs02 = 20;
+        cfg.nDataSymbs = 20;
         cfg.snrDb = 30;
         cfg.nSlots = 100;
         cfg.animatePause = 0.2;
@@ -38,7 +38,7 @@ end
 function cfg = baseCfg()
 cfg.nBlankSymbs = 8;
 cfg.nTrngSymbs01 = 256;
-cfg.nHops = 20;
+cfg.nHops = 30;
 cfg.sampsPerSymb = 4;
 cfg.rolloff = 0.25;
 cfg.filterSpan = 8;

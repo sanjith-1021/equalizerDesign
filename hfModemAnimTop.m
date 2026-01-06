@@ -6,12 +6,14 @@ addpath(fullfile(scriptDir, 'config'));
 cfg = presets('tap-anim');
 
 rng(cfg.seed);
+rng(cfg.seed);
 trngBits01 = randi([0 1], cfg.nTrngSymbs01 * log2(cfg.M), 1);
 trngBits02 = randi([0 1], cfg.nTrngSymbs02 * log2(cfg.M), 1);
 trngInts01 = bi2de(reshape(trngBits01, log2(cfg.M), []).', 'left-msb');
 trngInts02 = bi2de(reshape(trngBits02, log2(cfg.M), []).', 'left-msb');
 cfg.TrngSeq01 = pskmod(trngInts01, cfg.M, pi / cfg.M);
 cfg.TrngSeq02 = pskmod(trngInts02, cfg.M, pi / cfg.M);
+
 
 rrc = rcosdesign(cfg.rolloff, cfg.filterSpan, cfg.sampsPerSymb, 'sqrt').';
 
@@ -39,22 +41,52 @@ berRls = zeros(cfg.nSlots, 1);
 berKalman = zeros(cfg.nSlots, 1);
 
 
-tapFig = figure('Name', 'Error History', 'NumberTitle', 'off');
+tapFig = figure('Name', 'Equalizer View', 'NumberTitle', 'off');
 errCnt = numel(modulator.SlotSymbType);
 errAx = gobjects(3, 1);
-errLineChan = gobjects(3, 1);
 errLineEst = gobjects(3, 1);
+scatAx = gobjects(3, 1);
+scatLine = gobjects(3, 1);
 algs = {'LMS', 'RLS', 'Kalman'};
 errAxis = 0:errCnt-1;
 for k = 1:3
-    errAx(k) = subplot(3, 1, k);
+    errAx(k) = subplot(3, 2, (k-1)*2 + 1);
     errLineEst(k) = plot(errAx(k), errAxis, zeros(1, errCnt), 'r.-', 'LineWidth', 1.1, 'MarkerSize', 8);
     grid(errAx(k), 'on');
     ylabel(errAx(k), '|err|');
-    title(errAx(k), algs{k});
-    if k == 3
-        xlabel(errAx(k), 'Symb Index');
-    end
+    title(errAx(k), sprintf('%s | Error', algs{k}));
+    xlabel(errAx(k), 'Symb Index');
+
+    scatAx(k) = subplot(3, 2, (k-1)*2 + 2);
+    scatLine(k) = plot(scatAx(k), 0, 0, 'b.');
+    axis(scatAx(k), 'equal');
+    grid(scatAx(k), 'on');
+    title(scatAx(k), sprintf('%s | Scatter', algs{k}));
+    xlabel(scatAx(k), 'I');
+    ylabel(scatAx(k), 'Q');
+end
+
+function [a, b] = golayPair(n)
+%GOLAYPAIR Generate a Golay complementary pair of length n (power of 2).
+if n <= 0 || bitand(n, n-1) ~= 0
+    error('Golay pair length must be a positive power of 2.');
+end
+a = 1;
+b = 1;
+while numel(a) < n
+    aNext = [a b];
+    bNext = [a -b];
+    a = aNext;
+    b = bNext;
+end
+a = a(:);
+b = b(:);
+end
+
+function symbs = mapBpskTo8psk(bpsk)
+%MAPBPSKTO8PSK Map +/-1 to nearest 8-PSK points with pi/8 offset.
+phase = pi/8 + (bpsk < 0) * pi;
+symbs = exp(1j * phase);
 end
 
 for frameIdx = 1:cfg.nSlots
@@ -64,22 +96,27 @@ for frameIdx = 1:cfg.nSlots
 
     rxWaveform = channelModel(txWaveform);
 
-    [rcvdBitsLms, ~, errHistLms] = demodLms(rxWaveform);
-    [rcvdBitsRls, ~, errHistRls] = demodRls(rxWaveform);
-    [rcvdBitsKalman, ~, errHistKalman] = demodKalman(rxWaveform);
+    [rcvdBitsLms, eqSymbsLms, errHistLms] = demodLms(rxWaveform);
+    [rcvdBitsRls, eqSymbsRls, errHistRls] = demodRls(rxWaveform);
+    [rcvdBitsKalman, eqSymbsKalman, errHistKalman] = demodKalman(rxWaveform);
 
     berLms(frameIdx) = mean(rcvdBitsLms ~= codedBits);
     berRls(frameIdx) = mean(rcvdBitsRls ~= codedBits);
     berKalman(frameIdx) = mean(rcvdBitsKalman ~= codedBits);
 
     errHists = {errHistLms, errHistRls, errHistKalman};
+    dataSymbs = { ...
+        eqSymbsLms(demodLms.slotSymbType == 3), ...
+        eqSymbsRls(demodRls.slotSymbType == 3), ...
+        eqSymbsKalman(demodKalman.slotSymbType == 3)};
     for k = 1:3
         set(errLineEst(k), 'YData', abs(errHists{k}));
         maxVal = max([abs(errHists{k}); 1e-3]);
         ylim(errAx(k), [0 maxVal * 1.1]);
+        set(scatLine(k), 'XData', real(dataSymbs{k}), 'YData', imag(dataSymbs{k}));
     end
 
-    tapFig.Name = sprintf('Error History | SNR %.1f dB | Frame %d/%d', ...
+    tapFig.Name = sprintf('Equalizer View | SNR %.1f dB | Frame %d/%d', ...
         cfg.snrDb, frameIdx, cfg.nSlots);
     drawnow;
     if cfg.animatePause > 0
