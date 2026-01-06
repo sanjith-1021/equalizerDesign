@@ -11,6 +11,8 @@ switch lower(presetName)
         cfg.nDataSymbs = 32;
         cfg.snrDb = 0:4:30;
         cfg.nSlots = 10;
+        cfg.M = 8;
+
     case {'tap-anim'}
         cfg = baseCfg();
         cfg.nTrngSymbs02 = 16;
@@ -18,19 +20,22 @@ switch lower(presetName)
         cfg.snrDb = 25;
         cfg.nSlots = 10;
         cfg.animatePause = 0.2;
+        cfg.M = 8;
+
     case {'basic-run'}
         cfg = baseCfg();
         cfg.nTrngSymbs02 = 16;
         cfg.nDataSymbs = 32;
         cfg.snrDb = 10;
         cfg.nSlots = 2;
+        cfg.M = 4;
+
     otherwise
         error('Unknown preset: %s', presetName);
 end
 end
 
 function cfg = baseCfg()
-cfg.M = 8;
 cfg.nBlankSymbs = 8;
 cfg.nTrngSymbs01 = 256;
 cfg.nHops = 18;

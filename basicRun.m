@@ -30,39 +30,46 @@ cfg.TrngSeq02 = pskmod(trngInts02, cfg.M, pi / cfg.M);
 
 
 mod = TxModulator('Cfg', cfg);
-dem = RxDemodulator('Cfg', cfg, 'EqualizerAlgorithm', 'Kalman');
+algs = {'LMS', 'RLS', 'Kalman'};
 
 dataBits = randi([0 1], cfg.nHops * cfg.nDataSymbs * log2(cfg.M), 1);
 [txWaveform, txSymbs] = mod(dataBits);
 rxWaveform = channelModel(txWaveform);
-[rxBits, eqSymbs, errHist] = dem(rxWaveform);
-
-ber = mean(rxBits ~= dataBits);
-
 txDataSymbs = txSymbs(mod.SlotSymbType == 3);
-rxDataSymbs = eqSymbs(dem.slotSymbType == 3);
-evmRms = sqrt(mean(abs(rxDataSymbs - txDataSymbs).^2) / mean(abs(txDataSymbs).^2));
-evmPct = 100 * evmRms;
-
-fprintf('BER: %.4e\n', ber);
-fprintf('EVM RMS: %.2f %%\n', evmPct);
 
 figure('Name', 'Scatter Plots', 'NumberTitle', 'off');
-subplot(1, 2, 1);
+figure('Name', 'Error History', 'NumberTitle', 'off');
+
+figure(1);
+subplot(2, 2, 1);
 plot(real(txDataSymbs), imag(txDataSymbs), 'bo');
 axis equal; grid on;
 title('Tx Data Symbs');
 xlabel('I'); ylabel('Q');
 
-subplot(1, 2, 2);
-plot(real(rxDataSymbs), imag(rxDataSymbs), 'r.');
-axis equal; grid on;
-title('Rx Equalized Data Symbs');
-xlabel('I'); ylabel('Q');
+for algIdx = 1:numel(algs)
+    dem = RxDemodulator('Cfg', cfg, 'EqualizerAlgorithm', algs{algIdx});
+    [rxBits, eqSymbs, errHist] = dem(rxWaveform);
 
-figure('Name', 'Error History', 'NumberTitle', 'off');
-plot(abs(errHist), 'k.-');
-grid on;
-title('Equalizer Error History');
-xlabel('Symb Index');
-ylabel('|err|');
+    ber = mean(rxBits ~= dataBits);
+    rxDataSymbs = eqSymbs(dem.slotSymbType == 3);
+    evmRms = sqrt(mean(abs(rxDataSymbs - txDataSymbs).^2) / mean(abs(txDataSymbs).^2));
+    evmDb = 20 * log10(evmRms);
+
+    fprintf('%s | BER: %.4e | EVM RMS: %.2f dB\n', algs{algIdx}, ber, evmDb);
+
+    figure(1);
+    subplot(2, 2, algIdx + 1);
+    plot(real(rxDataSymbs), imag(rxDataSymbs), 'r.');
+    axis equal; grid on;
+    title(sprintf('Rx Equalized Data Symbs (%s)', algs{algIdx}));
+    xlabel('I'); ylabel('Q');
+
+    figure(2);
+    subplot(numel(algs), 1, algIdx);
+    plot(abs(errHist), 'k.-');
+    grid on;
+    title(sprintf('Error History (%s)', algs{algIdx}));
+    xlabel('Symb Index');
+    ylabel('|err|');
+end
