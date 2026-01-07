@@ -10,7 +10,7 @@ switch lower(presetName)
         cfg.nTrngSymbs02 = 16;
         cfg.nDataSymbs = 32;
         cfg.snrDb = 0:4:30;
-        cfg.nSlots = 10;
+        cfg.nSlots = 1000;
         cfg.M = 8;
 
     case {'tap-anim'}

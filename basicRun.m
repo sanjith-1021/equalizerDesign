@@ -12,14 +12,29 @@ snrDb = cfg.snrDb;
 % chanCoeffs = chanCoeffs / norm(chanCoeffs);
 % channelModel = @(waveform) conv(awgn(waveform, snrDb, 'measured'), chanCoeffs, 'same');
 
-chanLM = stdchan("iturHFLM", cfg.sampRate, cfg.fMax);
-chanLM.RandomStream = "mt19937ar with seed";
-chanLM = stdchan('iturHFLM', cfg.sampRate, cfg.fMax);
-chanLM.RandomStream = 'mt19937ar with seed';
-chanLM.Seed = 9999;
-chanLM.PathGainsOutputPort = false;
-channelModel = @(waveform) chanLM(awgn(waveform, snrDb, 'measured'));
+% chanLM = stdchan("iturHFLM", cfg.sampRate, cfg.fMax);
+% chanLM.RandomStream = "mt19937ar with seed";
+% chanLM = stdchan('iturHFLM', cfg.sampRate, cfg.fMax);
+% chanLM.RandomStream = 'mt19937ar with seed';
+% chanLM.Seed = 9999;
+% chanLM.PathGainsOutputPort = false;
+% channelModel = @(waveform) chanLM(awgn(waveform, snrDb, 'measured'));
 
+sigmaNorm = (0.5*sqrt(2))/3;
+doppSpec = doppler('Gaussian', sigmaNorm);
+chanLM = comm.RayleighChannel( ...
+    'SampleRate', cfg.sampRate, ...
+    'PathDelays', [0 1e-3], ...
+    'AveragePathGains', [0 0], ...
+    'NormalizePathGains', true, ...
+    'FadingTechnique', 'Filtered Gaussian noise',...
+    'MaximumDopplerShift', cfg.fMax, ...
+    'DopplerSpectrum', doppSpec, ...
+    'RandomStream', 'mt19937ar with seed', ...
+    'Seed', 9999 , ...
+    'PathGainsOutputPort', false ...
+    );
+channelModel = @(waveform) chanLM(awgn(waveform, snrDb, 'measured'));
 
 rng(cfg.seed);
 trngBits01 = pnBits(cfg.nTrngSymbs01 * log2(cfg.M), [10 7], cfg.seed);
