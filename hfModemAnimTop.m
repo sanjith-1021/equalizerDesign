@@ -66,29 +66,6 @@ for k = 1:3
     ylabel(scatAx(k), 'Q');
 end
 
-function [a, b] = golayPair(n)
-%GOLAYPAIR Generate a Golay complementary pair of length n (power of 2).
-if n <= 0 || bitand(n, n-1) ~= 0
-    error('Golay pair length must be a positive power of 2.');
-end
-a = 1;
-b = 1;
-while numel(a) < n
-    aNext = [a b];
-    bNext = [a -b];
-    a = aNext;
-    b = bNext;
-end
-a = a(:);
-b = b(:);
-end
-
-function symbs = mapBpskTo8psk(bpsk)
-%MAPBPSKTO8PSK Map +/-1 to nearest 8-PSK points with pi/8 offset.
-phase = pi/8 + (bpsk < 0) * pi;
-symbs = exp(1j * phase);
-end
-
 for frameIdx = 1:cfg.nSlots
     dataBits = randi([0 1], cfg.nHops * cfg.nDataSymbs * log2(cfg.M)/2, 1);
     codedBits = conv_encode_rate12(dataBits, cfg.generators);

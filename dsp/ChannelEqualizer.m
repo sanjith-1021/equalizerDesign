@@ -5,11 +5,8 @@ classdef ChannelEqualizer < matlab.System
         nFeedbackTaps = 8;
         nSampsPerSymb = 4;
         modOrder = 8;
-        stepSize = 1e-3;
-        forgetFactor = .95
-        initInvCorr = 5e-2
-        measurementNoise = 1e-3
-        processNoise = 1e-4
+        trainEq = struct();
+        dataEq = struct();
     end
 
     properties (Access = private)
@@ -50,11 +47,11 @@ classdef ChannelEqualizer < matlab.System
 
             totalTaps = obj.nFeedbackTaps + obj.nFeedforwardTaps;
             if obj.isRls()
-                obj.P = (1/obj.initInvCorr)*eye(totalTaps);
+                obj.P = (1/obj.trainEq.initInvCorr)*eye(totalTaps);
             elseif obj.isKalman()
-                obj.P = (1/obj.initInvCorr)*eye(totalTaps);
-                obj.Q = obj.processNoise * eye(totalTaps);
-                obj.R = obj.measurementNoise;
+                obj.P = (1/obj.trainEq.initInvCorr)*eye(totalTaps);
+                obj.Q = obj.trainEq.processNoise * eye(totalTaps);
+                obj.R = obj.trainEq.measurementNoise;
             else
                 obj.P = [];
             end
@@ -86,17 +83,20 @@ classdef ChannelEqualizer < matlab.System
                             case {1, 2} 
                                 trngSymbCnt = trngSymbCnt + 1;
                                 hdSymb = trngSymbs(trngSymbCnt);
+                                eqParams = obj.trainEq;
                             case 3
                                 dInt = pskdemod(yi, obj.modOrder, pi/obj.modOrder);
                                 hdSymb = pskmod(dInt, obj.modOrder, pi/obj.modOrder);
+                                eqParams = obj.dataEq;
                             otherwise
                                 hdSymb = 0;
+                                eqParams = obj.trainEq;
                         end
 
                         if symbType ~= 0 
                             symbErr = hdSymb - yi;
                             errHist(symbIdx)=symbErr;
-                            if symbType ~= 0, obj.updateWeights(symbErr); end
+                            obj.updateWeights(symbErr, eqParams);
                             obj.fbDelayLine = [hdSymb;obj.fbDelayLine(1: end-1)];
                         end
                     end
@@ -116,23 +116,24 @@ classdef ChannelEqualizer < matlab.System
     end
 
     methods (Access = private)
-        function updateWeights(obj, symbErr)
+        function updateWeights(obj, symbErr, eqParams)
             if obj.isRls()
                 u = [obj.ffDelayLine; -obj.fbDelayLine];
                 Pu = obj.P * u;
-                denom = obj.forgetFactor + (u'*Pu);
+                denom = eqParams.forgetFactor + (u'*Pu);
                 K = Pu/real(denom);
 
                 w = [obj.ffWeights; obj.fbWeights] + K*conj(symbErr);
                 obj.ffWeights = w(1:obj.nFeedforwardTaps);
                 obj.fbWeights = w(obj.nFeedforwardTaps + 1: end);
 
-                obj.P = (obj.P - K * (u'*obj.P))/obj.forgetFactor;
+                obj.P = (obj.P - K * (u'*obj.P))/eqParams.forgetFactor;
 
             elseif obj.isKalman()
                 u = [obj.ffDelayLine; -obj.fbDelayLine];
-                predP = obj.P + obj.Q;
-                denom = real(u' * predP * u) + obj.R;
+                totalTaps = obj.nFeedforwardTaps + obj.nFeedbackTaps;
+                predP = obj.P + eqParams.processNoise * eye(totalTaps);
+                denom = real(u' * predP * u) + eqParams.measurementNoise;
                 K = predP * u / denom;
 
                 w = [obj.ffWeights; obj.fbWeights] + K*conj(symbErr);
@@ -146,8 +147,8 @@ classdef ChannelEqualizer < matlab.System
                 % newP = (iMat - K * u') * predP * (iMat - K * u')' + K * obj.R * K';
                 % obj.P = (newP + newP')/2; 
             else
-                obj.ffWeights = obj.ffWeights + obj.stepSize * conj(symbErr) * obj.ffDelayLine;
-                obj.fbWeights = obj.fbWeights - obj.stepSize * conj(symbErr) * obj.fbDelayLine;
+                obj.ffWeights = obj.ffWeights + eqParams.stepSize * conj(symbErr) * obj.ffDelayLine;
+                obj.fbWeights = obj.fbWeights - eqParams.stepSize * conj(symbErr) * obj.fbDelayLine;
             end
         end
 

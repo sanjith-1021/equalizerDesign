@@ -77,6 +77,14 @@ classdef RxDemodulator < matlab.System
                 if any(strcmpi(name, {'algorithm', 'nSampsPerSymb', 'modOrder'}))
                     continue;
                 end
+                if strcmpi(name, 'train')
+                    args = [args, {'trainEq', eqCfg.train}]; %#ok<AGROW>
+                    continue;
+                end
+                if strcmpi(name, 'data')
+                    args = [args, {'dataEq', eqCfg.data}]; %#ok<AGROW>
+                    continue;
+                end
                 args = [args, {name, eqCfg.(name)}]; %#ok<AGROW>
             end
         end
