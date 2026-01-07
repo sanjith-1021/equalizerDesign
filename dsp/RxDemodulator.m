@@ -40,10 +40,11 @@ classdef RxDemodulator < matlab.System
                                    zeros(c.nBlankSymbs, 1)];
             obj.KnownSymbs = [c.TrngSeq01; repmat(c.TrngSeq02, c.nHops, 1)];
 
-            obj.EqObj = ChannelEqualizer( ...
-                'algorithm', obj.EqualizerAlgorithm, ...
-                'nSampsPerSymb', c.sampsPerSymb, ...
-                'modOrder', c.M);
+            eqArgs = {'algorithm', obj.EqualizerAlgorithm, ...
+                      'nSampsPerSymb', c.sampsPerSymb, ...
+                      'modOrder', c.M};
+            eqArgs = [eqArgs, obj.eqStructToArgs(c.eq)]; 
+            obj.EqObj = ChannelEqualizer(eqArgs{:});
         end
 
         function [rxBits, eqSymbs, errHist] = stepImpl(obj, rxWaveform)
@@ -64,6 +65,20 @@ classdef RxDemodulator < matlab.System
 
         function num = getNumOutputsImpl(~)
             num = 3;
+        end
+    end
+
+    methods (Access = private)
+        function args = eqStructToArgs(~, eqCfg)
+            names = fieldnames(eqCfg);
+            args = {};
+            for k = 1:numel(names)
+                name = names{k};
+                if any(strcmpi(name, {'algorithm', 'nSampsPerSymb', 'modOrder'}))
+                    continue;
+                end
+                args = [args, {name, eqCfg.(name)}]; %#ok<AGROW>
+            end
         end
     end
 end

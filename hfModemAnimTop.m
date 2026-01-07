@@ -23,11 +23,11 @@ rrc = rcosdesign(cfg.rolloff, cfg.filterSpan, cfg.sampsPerSymb, 'sqrt').';
 % channelModel = @(waveform) conv(awgn(waveform, cfg.snrDb, 'measured'), chanCoeffs, 'same');
 
 
-chanLM = stdchan('iturHFLM', cfg.sampRate, cfg.fMax);
+fdMax = 1;
+chanLM = stdchan('iturHFLM', cfg.sampRate, fdMax);
 chanLM.RandomStream = 'mt19937ar with seed';
 chanLM.Seed = 9999;
 chanLM.PathGainsOutputPort = false;
-reset(chanLM);
 channelModel = @(waveform) chanLM(awgn(waveform, cfg.snrDb, 'measured'));
 
 
