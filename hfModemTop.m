@@ -20,9 +20,8 @@ cfg.TrngSeq02 = pskmod(trngInts02, cfg.M, pi / cfg.M);
 % chanCoeffs = chanCoeffs / norm(chanCoeffs);
 % channelModel = @(waveform, snrDb) conv(awgn(waveform, snrDb, 'measured'), chanCoeffs, 'same');
 
-% chanLM = stdchan("iturHFLM", cfg.sampRate, cfg.fMax);
-% chanLM.RandomStream = "mt19937ar with seed";
-% chanLM = stdchan('iturHFLM', cfg.sampRate, cfg.fMax);
+% fdMax = 1;
+% chanLM = stdchan('iturHFLM', cfg.sampRate, fdMax);
 % chanLM.RandomStream = 'mt19937ar with seed';
 % chanLM.Seed = 9999;
 % chanLM.PathGainsOutputPort = false;
@@ -43,7 +42,7 @@ chanLM = comm.RayleighChannel( ...
     'PathGainsOutputPort', true ...
     );
 
-channelModel = @(waveform, snrDb) awgn(chanLM(waveform), snrDb, 'measured');
+chan = @(waveform, snrDb) awgn(chanLM(waveform), snrDb, 'measured');
 
 
 snrPoints = cfg.snrDb(:);

@@ -17,19 +17,9 @@ cfg.TrngSeq02 = pskmod(trngInts02, cfg.M, pi / cfg.M);
 
 rrc = rcosdesign(cfg.rolloff, cfg.filterSpan, cfg.sampsPerSymb, 'sqrt').';
 
-% nChanTaps = 4;
-% chanCoeffs = randn(nChanTaps, 1) + 1j * randn(nChanTaps, 1);
-% chanCoeffs = chanCoeffs / norm(chanCoeffs);
-% channelModel = @(waveform) conv(awgn(waveform, cfg.snrDb, 'measured'), chanCoeffs, 'same');
-
-
-fdMax = 1;
-chanLM = stdchan('iturHFLM', cfg.sampRate, fdMax);
-chanLM.RandomStream = 'mt19937ar with seed';
-chanLM.Seed = 9999;
-chanLM.PathGainsOutputPort = false;
-channelModel = @(waveform) chanLM(awgn(waveform, cfg.snrDb, 'measured'));
-
+% [chan, ~] = channelModel(cfg, 'toy', cfg.snrDb);
+[chan, ~] = channelModel(cfg, 'lm', cfg.snrDb);
+% [chan, ~] = channelModel(cfg, 'table', 2);
 
 modulator = TxModulator('Cfg', cfg);
 demodLms = RxDemodulator('Cfg', cfg, 'EqualizerAlgorithm', 'LMS');
@@ -71,7 +61,7 @@ for frameIdx = 1:cfg.nSlots
     codedBits = conv_encode_rate12(dataBits, cfg.generators);
     txWaveform = modulator(codedBits);
 
-    rxWaveform = channelModel(txWaveform);
+    rxWaveform = chan(txWaveform);
 
     [rcvdBitsLms, eqSymbsLms, errHistLms] = demodLms(rxWaveform);
     [rcvdBitsRls, eqSymbsRls, errHistRls] = demodRls(rxWaveform);

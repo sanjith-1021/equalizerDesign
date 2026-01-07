@@ -18,9 +18,8 @@ switch lower(presetName)
         cfg.nSlots = 20;
         cfg.animatePause = 0.2;
         
-        cfg.eq.train.forgetFactor = 0.99;
-        cfg.eq.data.forgetFactor = 0.99;
-        cfg.eq.train.initInvCorr = 1e-2;
+        cfg.eq.train.forgetFactor = 0.88;
+        cfg.eq.data.forgetFactor = 0.999;
 
 
 
@@ -42,7 +41,7 @@ function cfg = baseCfg()
     cfg.sampRate = 9600;
     cfg.nHops = 512;
     cfg.nBlankSymbs = 8;
-    cfg.nTrngSymbs01 = 256;
+    cfg.nTrngSymbs01 = 64;
     cfg.nTrngSymbs02 = 16;
     cfg.nDataSymbs = 32;
     cfg.seed = 101;

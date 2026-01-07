@@ -20,12 +20,7 @@ function [channelModel, chanObj] = channelModel(cfg, mode, varargin)
 
         case 'toy'
             snrDb = varargin{1};
-            if numel(varargin) >= 2
-                nChanTaps = varargin{2};
-            else
-                nChanTaps = 5;
-            end
-            [channelModel, chanObj] = toyChannel(cfg, snrDb, nChanTaps);
+            [channelModel, chanObj] = toyChannel(cfg, snrDb);
 
         otherwise
             error('Unknown mode "%s". Use ''table'', ''lm'', or ''toy''.', mode);
@@ -82,8 +77,8 @@ function [channelModel, chanObj] = lmChannel(cfg, snrDb)
 end
 
 % -------------------------------------------------------------------------
-function [channelModel, chanObj] = toyChannel(~, snrDb, nChanTaps)
-
+function [channelModel, chanObj] = toyChannel(~, snrDb)
+    nChanTaps = 4;
     chanCoeffs = randn(nChanTaps, 1) + 1j * randn(nChanTaps, 1);
     chanCoeffs = chanCoeffs / norm(chanCoeffs);
 
