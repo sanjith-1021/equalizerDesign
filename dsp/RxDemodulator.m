@@ -52,11 +52,28 @@ classdef RxDemodulator < matlab.System
 
             reset(obj.EqObj);
             [eqSymbs, errHist] = obj.EqObj(matched, obj.KnownSymbs, obj.slotSymbType);
+            % eqSymbs = matched(1:obj.Cfg.sampsPerSymb:end);
+        %    errHist = zeros(length(eqSymbs),1);
             
             dataEq = eqSymbs(obj.slotSymbType == 3);
-            rxInts = pskdemod(dataEq, obj.Cfg.M, pi / obj.Cfg.M);
-            rxBits = de2bi(rxInts, obj.BitsPerSymb, 'left-msb').';
-            rxBits = rxBits(:);
+
+
+            EsNo = 10^(30/10);
+            nVar = 1/EsNo;
+            llr = pskdemod(dataEq, obj.Cfg.M, 0, 'gray', ...
+                'OutputType','llr', 'NoiseVariance', nVar);
+            L = llr(:);
+            Lclip = max(min(L, obj.Cfg.fec.llrClip), -obj.Cfg.fec.llrClip);
+            p1 = 1 ./ (1 + exp(Lclip));
+            demap_out = round(p1 * (2^obj.Cfg.fec.nSoft - 1));
+
+
+            intlinprog_depth = 576;
+            intl_read_order = int_indx_gen(intlinprog_depth);% 72 or 576 , default depth is 40.
+            deintl_read_order(intl_read_order) = 1:numel(intl_read_order);
+            dintlvd_out = demap_out(deintl_read_order);
+            dec_bits = vitdec(dintlvd_out, obj.Cfg.fec.trellis, obj.Cfg.fec.tblen, 'trunc', 'soft', 3);
+            rxBits = dec_bits(:);
         end
 
         function num = getNumInputsImpl(~)

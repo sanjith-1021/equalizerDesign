@@ -71,7 +71,7 @@ classdef channelModel < matlab.System
             end
 
             y = h0 .* xIn + h1 .* xDelay;
-            y = awgn(y, c.snrDb, 'measured');
+            y = awgn(y, c.snrDb-10*log10(obj.cfg.sampsPerSymb), 'measured');
 
             if size(x, 1) == 1
                 y = y.';

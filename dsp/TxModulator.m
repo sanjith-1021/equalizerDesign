@@ -50,7 +50,7 @@ classdef TxModulator < matlab.System
             c = obj.Cfg;
             dataBits = dataBits(:);
             dataInts = bi2de(reshape(dataBits, obj.BitsPerSymb, []).', 'left-msb');
-            dataSymbs = pskmod(dataInts, c.M, pi / c.M);
+            dataSymbs = pskmod(dataInts, c.M, 0, 'gray');
 
             nDataSymbs = c.nHops * c.nDataSymbs;
             if numel(dataSymbs) ~= nDataSymbs

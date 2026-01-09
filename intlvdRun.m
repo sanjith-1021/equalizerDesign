@@ -1,7 +1,7 @@
 % Simple transceiver run for one slot with scatter, BER, EVM, and error history.
 close all; clc; clear;
 
-cfg = presets('basic-run');
+cfg = presets('intrlvd-run');
 
 chan = channelModel(cfg, 2);
 
@@ -10,15 +10,21 @@ trngBits01 = pnBits(cfg.nTrngSymbs01 * log2(cfg.M), [10 7], cfg.seed);
 trngBits02 = randi([0 1], cfg.nTrngSymbs02 * log2(cfg.M), 1);
 trngInts01 = bi2de(reshape(trngBits01, log2(cfg.M), []).', 'left-msb');
 trngInts02 = bi2de(reshape(trngBits02, log2(cfg.M), []).', 'left-msb');
-cfg.TrngSeq01 = pskmod(trngInts01, cfg.M, pi / cfg.M);
-cfg.TrngSeq02 = pskmod(trngInts02, cfg.M, pi / cfg.M);
+cfg.TrngSeq01 = pskmod(trngInts01, cfg.M, 0, 'gray');
+cfg.TrngSeq02 = pskmod(trngInts02, cfg.M, 0, 'gray');
 
 
 mod = TxModulator('Cfg', cfg);
 algs = {'Kalman'};      % 
 
-dataBits = randi([0 1], cfg.nHops * cfg.nDataSymbs * log2(cfg.M), 1);
-[txWaveform, txSymbs] = mod(dataBits);
+% intlinprog_depth = 72;
+intlinprog_depth = 576;
+intl_read_order = int_indx_gen(intlinprog_depth);% 72 or 576 , default depth is 40.
+deintl_read_order(intl_read_order) = 1:numel(intl_read_order);
+
+[dataBits, coded_bits, ~, data_sym_idx] = fec_conv_encode(cfg.nDataSymbs*cfg.nHops, cfg);
+intlvdBits = coded_bits(intl_read_order);
+[txWaveform, txSymbs] = mod(intlvdBits);
 [rxWaveform, chanObj] = chan(txWaveform);
 txDataSymbs = txSymbs(mod.SlotSymbType == 3);
 

@@ -85,8 +85,8 @@ classdef ChannelEqualizer < matlab.System
                                 hdSymb = trngSymbs(trngSymbCnt);
                                 eqParams = obj.trainEq;
                             case 3
-                                dInt = pskdemod(yi, obj.modOrder, pi/obj.modOrder);
-                                hdSymb = pskmod(dInt, obj.modOrder, pi/obj.modOrder);
+                                dInt = pskdemod(yi, obj.modOrder, 0, 'gray');
+                                hdSymb = pskmod(dInt, obj.modOrder, 0, 'gray');
                                 eqParams = obj.dataEq;
                             otherwise
                                 hdSymb = 0;
@@ -96,7 +96,7 @@ classdef ChannelEqualizer < matlab.System
                         if symbType ~= 0 
                             symbErr = hdSymb - yi;
                             errHist(symbIdx)=symbErr;
-                            obj.updateWeights(symbErr, eqParams);
+                            if symbType~=3, obj.updateWeights(symbErr, eqParams); end
                             obj.fbDelayLine = [hdSymb;obj.fbDelayLine(1: end-1)];
                         end
                     end
