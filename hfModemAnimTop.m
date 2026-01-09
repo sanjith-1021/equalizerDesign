@@ -17,9 +17,7 @@ cfg.TrngSeq02 = pskmod(trngInts02, cfg.M, pi / cfg.M);
 
 rrc = rcosdesign(cfg.rolloff, cfg.filterSpan, cfg.sampsPerSymb, 'sqrt').';
 
-% [chan, ~] = channelModel(cfg, 'toy', cfg.snrDb);
-[chan, ~] = channelModel(cfg, 'lm', cfg.snrDb);
-% [chan, ~] = channelModel(cfg, 'table', 2);
+chan = channelModel(cfg, 2);
 
 modulator = TxModulator('Cfg', cfg);
 demodLms = RxDemodulator('Cfg', cfg, 'EqualizerAlgorithm', 'LMS');
@@ -61,7 +59,7 @@ for frameIdx = 1:cfg.nSlots
     codedBits = conv_encode_rate12(dataBits, cfg.generators);
     txWaveform = modulator(codedBits);
 
-    rxWaveform = chan(txWaveform);
+    [rxWaveform,~] = chan(txWaveform);
 
     [rcvdBitsLms, eqSymbsLms, errHistLms] = demodLms(rxWaveform);
     [rcvdBitsRls, eqSymbsRls, errHistRls] = demodRls(rxWaveform);

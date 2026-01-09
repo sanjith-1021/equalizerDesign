@@ -1,122 +1,142 @@
-function [channelModel, chanObj] = channelModel(cfg, mode, varargin)
-    % channelModel  HF channel factory for MIL-STD-188-110B-style tests
-    % 
-    % Usage examples:
-    %   [cm, obj] = channelModel(cfg, 'table', caseId);  % Table-XX cases <= 2400 bps
-    %   [cm, obj] = channelModel(cfg, 'lm', snrDb);      % ITU-R HFLM Watterson channel
-    %   [cm, obj] = channelModel(cfg, 'toy', snrDb);     % simple static FIR toy channel
-    %   [cm, obj] = channelModel(cfg, 'toy', snrDb, nChanTaps);
+classdef channelModel < matlab.System
+    % channelModel  HF channel for Table XX cases (<= 2400 bps)
     %
-    %   y = cm(x);   % apply selected channel model to waveform x
+    % Usage:
+    %   cm = channelModel(cfg, caseId);
+    %   [y, chanObj] = cm(x);
 
-    switch lower(mode)
-        case 'table'
-            caseId = varargin{1};
-            [channelModel, chanObj] = tableChannel(cfg, caseId);
-
-        case 'lm'
-            snrDb = varargin{1};
-            [channelModel, chanObj] = lmChannel(cfg, snrDb);
-
-        case 'toy'
-            snrDb = varargin{1};
-            [channelModel, chanObj] = toyChannel(cfg, snrDb);
-
-        otherwise
-            error('Unknown mode "%s". Use ''table'', ''lm'', or ''toy''.', mode);
+    properties (Nontunable, SetAccess = private)
+        cfg
+        caseId
     end
 
-end
-
-% -------------------------------------------------------------------------
-function [channelModel, chanObj] = tableChannel(cfg, caseId)
-
-    cases = getCases();
-    c = cases(caseId);
-
-    if ~c.isFading
-        chanObj      = [];
-        channelModel = @(x) awgn(x, c.snrDb, 'measured');
-        return;
+    properties (Access = private)
+        caseConfig
+        sampleRate
     end
 
-    pathDelays   = [0, c.multipathMs * 1e-3];
-    avgPathGains = [0 0];
+    methods
+        function obj = channelModel(cfg, caseId)
+            obj.cfg = cfg;
+            obj.caseId = caseId;
+        end
 
-    fdMax     = c.fadingBwHz;   % fading BW = 2*sigma, fdMax = BW => sigmaNorm = 0.5
-    sigmaNorm = 0.5;
-    doppSpec  = doppler('Gaussian', sigmaNorm);
+        function [y, chanObj] = apply(obj, x)
+            [y, chanObj] = obj(x);
+        end
+    end
 
-    chanObj = comm.RayleighChannel( ...
-        'SampleRate',          cfg.sampRate, ...
-        'PathDelays',          pathDelays, ...
-        'AveragePathGains',    avgPathGains, ...
-        'NormalizePathGains',  true, ...
-        'FadingTechnique',     'Filtered Gaussian noise', ...
-        'MaximumDopplerShift', fdMax, ...
-        'DopplerSpectrum',     doppSpec, ...
-        'RandomStream',        'mt19937ar with seed', ...
-        'Seed',                c.seed, ...
-        'PathGainsOutputPort', false);
+    methods (Access = protected)
+        function setupImpl(obj)
+            cases = obj.getCases();
+            obj.caseConfig = cases(obj.caseId);
+            obj.sampleRate = obj.cfg.sampRate;
+        end
 
-    channelModel = @(x) awgn(chanObj(x), c.snrDb, 'measured');
+        function [y, chanObj] = stepImpl(obj, x)
+            c = obj.caseConfig;
+            if ~c.isFading
+                y = awgn(x, c.snrDb, 'measured');
+                if nargout > 1
+                    chanObj = [];
+                end
+                return;
+            end
 
-end
+            [y, chanObj] = obj.applyFading(x, c);
+        end
+    end
 
-% -------------------------------------------------------------------------
-function [channelModel, chanObj] = lmChannel(cfg, snrDb)
+    methods (Access = private)
+        function [y, chanObj] = applyFading(obj, x, c)
+            xIn = x(:);
+            nSig = numel(xIn);
 
-    fdMax  = 1;  % Hz
-    chanObj = stdchan('iturHFLM', cfg.sampRate, fdMax);
-    chanObj.RandomStream        = 'mt19937ar with seed';
-    chanObj.Seed                = 9999;
-    chanObj.PathGainsOutputPort = false;
+            f3dbNorm = 0.01;
+            firLen = 257;
+            fadeRate = 100 * c.fadingBwHz;
 
-    channelModel = @(x) awgn(chanObj(x), snrDb, 'measured');
+            h0 = obj.makeFadingFirNorm(obj.sampleRate, fadeRate, f3dbNorm, firLen, nSig, c.seed);
+            h1 = obj.makeFadingFirNorm(obj.sampleRate, fadeRate, f3dbNorm, firLen, nSig, c.seed + 1);
 
-end
+            scale = 1 / sqrt(2);
+            h0 = h0 * scale;
+            h1 = h1 * scale;
 
-% -------------------------------------------------------------------------
-function [channelModel, chanObj] = toyChannel(~, snrDb)
-    nChanTaps = 4;
-    chanCoeffs = randn(nChanTaps, 1) + 1j * randn(nChanTaps, 1);
-    chanCoeffs = chanCoeffs / norm(chanCoeffs);
+            delaySamples = round(c.multipathMs * 1e-3 * obj.sampleRate);
+            if delaySamples > 0
+                xDelay = [zeros(delaySamples, 1); xIn(1:end - delaySamples)];
+            else
+                xDelay = xIn;
+            end
 
-    chanObj = chanCoeffs;
-    channelModel = @(x) conv(awgn(x, snrDb, 'measured'), chanCoeffs, 'same');
+            y = h0 .* xIn + h1 .* xDelay;
+            y = awgn(y, c.snrDb, 'measured');
 
-end
+            if size(x, 1) == 1
+                y = y.';
+            end
 
-% -------------------------------------------------------------------------
-function cases = getCases()
+            if nargout > 1
+                chanObj = struct( ...
+                    'pathDelays', [0, c.multipathMs * 1e-3], ...
+                    'delaySamples', delaySamples, ...
+                    'pathGains', [h0, h1], ...
+                    'fadingBwHz', c.fadingBwHz, ...
+                    'seed', c.seed, ...
+                    'firLen', firLen, ...
+                    'f3dbNorm', f3dbNorm);
+            end
+        end
 
-    add = @(isF, mp, bw, snr, seed) struct( ...
-        'isFading',    isF, ...
-        'multipathMs', mp, ...
-        'fadingBwHz',  bw, ...
-        'snrDb',       snr, ...
-        'seed',        seed);
+        function hSig = makeFadingFirNorm(obj, FsSig, Ffade, f3dbNorm, L, Nsig, seed)
+            stream = RandStream('mt19937ar', 'Seed', seed);
+            b = obj.gaussFirNormF3db(f3dbNorm, L);
+            Nfade = ceil(Nsig * Ffade / FsSig) + 2;
+            w = (randn(stream, 1, Nfade) + 1j * randn(stream, 1, Nfade)) / sqrt(2);
+            hFade = conv(w, b, 'same');
+            hFade = hFade / sqrt(mean(abs(hFade).^2));
 
-    % Table XX rows for user bit rates <= 2400 bps
-    % 1: 2400, 1 fixed,  SNR = 10 dB
-    % 2: 2400, 2 fading, multipath = 2 ms, BW = 1 Hz,  SNR = 18 dB
-    % 3: 2400, 2 fading, multipath = 2 ms, BW = 5 Hz,  SNR = 30 dB
-    % 4: 2400, 2 fading, multipath = 5 ms, BW = 1 Hz,  SNR = 30 dB
-    % 5: 1200, 2 fading, multipath = 2 ms, BW = 1 Hz,  SNR = 11 dB
-    % 6: 600,  2 fading, multipath = 2 ms, BW = 1 Hz,  SNR = 7  dB
-    % 7: 300,  2 fading, multipath = 5 ms, BW = 5 Hz,  SNR = 7  dB
-    % 8: 150,  2 fading, multipath = 5 ms, BW = 5 Hz,  SNR = 5  dB
-    % 9: 75,   2 fading, multipath = 5 ms, BW = 5 Hz,  SNR = 2  dB
+            tFade = (0:Nfade-1) / Ffade;
+            tSig = (0:Nsig-1) / FsSig;
+            hSig = interp1(tFade, hFade, tSig, 'linear', 'extrap').';
+        end
 
-    cases = [ ...
-        add(false, 0, 0, 10, 1001); ...
-        add(true,  2, 1, 18, 1002); ...
-        add(true,  2, 5, 30, 1003); ...
-        add(true,  5, 1, 30, 1004); ...
-        add(true,  2, 1, 11, 1005); ...
-        add(true,  2, 1, 7,  1006); ...
-        add(true,  5, 5, 7,  1007); ...
-        add(true,  5, 5, 5,  1008); ...
-        add(true,  5, 5, 2,  1009)];
+        function b = gaussFirNormF3db(~, f3dbNorm, L)
+            sigma = f3dbNorm / sqrt(log(2));
+            Nfft = 2^nextpow2(16 * L);
+            k = 0:Nfft-1;
+            f = (k - floor(Nfft/2)) / Nfft;
+            H = exp(-(f.^2) / (2 * sigma^2));
+            H = ifftshift(H);
+            hFull = real(ifft(H));
+            hFull = fftshift(hFull);
+            mid = floor(Nfft/2) + 1;
+            idx = (mid - floor(L/2)) : (mid + floor(L/2));
+            b = hFull(idx);
+            b = b / sum(b);
+        end
+    end
 
+    methods (Access = private, Static)
+        function cases = getCases()
+            add = @(isF, mp, bw, snr, seed) struct( ...
+                'isFading', isF, ...
+                'multipathMs', mp, ...
+                'fadingBwHz', bw, ...
+                'snrDb', snr, ...
+                'seed', seed);
+
+            cases = [ ...
+                add(false, 0, 0, 10, 1001); ...         % 1: 2400, 1 fixed,  SNR = 10 dB          
+                add(true,  2, 1, 30, 1002); ...         % 2: 2400, 2 fading, multipath = 2 ms, BW = 1 Hz,  SNR = 18 dB
+                add(true,  2, 5, 30, 1003); ...         % 3: 2400, 2 fading, multipath = 2 ms, BW = 5 Hz,  SNR = 30 dB
+                add(true,  5, 1, 30, 1004); ...         % 4: 2400, 2 fading, multipath = 5 ms, BW = 1 Hz,  SNR = 30 dB
+                add(true,  2, 1, 11, 1005); ...         % 5: 1200, 2 fading, multipath = 2 ms, BW = 1 Hz,  SNR = 11 dB
+                add(true,  2, 1, 7,  1006); ...         % 6: 600,  2 fading, multipath = 2 ms, BW = 1 Hz,  SNR = 7  dB
+                add(true,  5, 5, 7,  1007); ...         % 7: 300,  2 fading, multipath = 5 ms, BW = 5 Hz,  SNR = 7  dB
+                add(true,  5, 5, 5,  1008); ...         % 8: 150,  2 fading, multipath = 5 ms, BW = 5 Hz,  SNR = 5  dB
+                add(true,  5, 5, 2,  1009)];            % 9: 75,   2 fading, multipath = 5 ms, BW = 5 Hz,  SNR = 2  dB
+        end
+    end
 end
