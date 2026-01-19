@@ -1,66 +1,93 @@
-% Simple transceiver run for one slot with scatter, BER, EVM, and error history.
+% Simple transceiver run with scatter, BER, EVM, and error history.
 close all; clc; clear;
+addpath(genpath(pwd))
 
-cfg = presets('intrlvd-run');
+cfg = presets();
+bitsPerSymb = log2(cfg.M);
+nSlots = cfg.nSlots;
 
-chan = channelModel(cfg, 2);
+chan = channelModel(cfg, 1);
 
 rng(cfg.seed);
-trngBits01 = pnBits(cfg.nTrngSymbs01 * log2(cfg.M), [10 7], cfg.seed);
-trngBits02 = randi([0 1], cfg.nTrngSymbs02 * log2(cfg.M), 1);
-trngInts01 = bi2de(reshape(trngBits01, log2(cfg.M), []).', 'left-msb');
-trngInts02 = bi2de(reshape(trngBits02, log2(cfg.M), []).', 'left-msb');
-cfg.TrngSeq01 = pskmod(trngInts01, cfg.M, 0, 'gray');
-cfg.TrngSeq02 = pskmod(trngInts02, cfg.M, 0, 'gray');
+trngBits1 = pnBits(cfg.nTrngSymbs01 * bitsPerSymb, [10 7], cfg.seed);
+trngBits2 = randi([0 1], cfg.nTrngSymbs02 * bitsPerSymb, 1);
+trngInts1 = bi2de(reshape(trngBits1, bitsPerSymb, []).', 'left-msb');
+trngInts2 = bi2de(reshape(trngBits2, bitsPerSymb, []).', 'left-msb');
+cfg.TrngSeq01 = pskmod(trngInts1, cfg.M, 0, 'gray');
+cfg.TrngSeq02 = pskmod(trngInts2, cfg.M, 0, 'gray');
 
 
-mod = TxModulator('Cfg', cfg);
-algs = {'Kalman'};      % 
+txMod = TxModulator('Cfg', cfg);
 
-% intlinprog_depth = 72;
-intlinprog_depth = 576;
-intl_read_order = int_indx_gen(intlinprog_depth);% 72 or 576 , default depth is 40.
-deintl_read_order(intl_read_order) = 1:numel(intl_read_order);
+totalDataSymbs = nSlots * cfg.nHops * cfg.nDataSymbs;
+[dataBits, codedBits] = fec_conv_encode(totalDataSymbs, cfg);
 
-[dataBits, coded_bits, ~, data_sym_idx] = fec_conv_encode(cfg.nDataSymbs*cfg.nHops, cfg);
-intlvdBits = coded_bits(intl_read_order);
-[txWaveform, txSymbs] = mod(intlvdBits);
-[rxWaveform, chanObj] = chan(txWaveform);
-txDataSymbs = txSymbs(mod.SlotSymbType == 3);
+blockBits = cfg.nHops * cfg.nDataSymbs * bitsPerSymb;
+if mod(blockBits, 40) ~= 0
+    error('Interleaver block size must be divisible by 40.');
+end
+interleaverDepth = blockBits / 40;
+interleaverOrder = int_indx_gen(interleaverDepth);
+interleavedBits = zeros(size(codedBits));
+for slotIdx = 1:nSlots
+    bitStart = (slotIdx - 1) * blockBits + 1;
+    bitEnd = bitStart + blockBits - 1;
+    block = codedBits(bitStart:bitEnd);
+    interleavedBits(bitStart:bitEnd) = block(interleaverOrder);
+end
 
-figure('Name', 'Scatter Plots', 'NumberTitle', 'off');
-figure('Name', 'Error History', 'NumberTitle', 'off');
+slotSymbType = txMod.SlotSymbType;
+slotSymbCount = numel(slotSymbType);
+slotSampCount = slotSymbCount * cfg.sampsPerSymb;
+dataSymbMask = slotSymbType == 3;
+dataSymbCount = sum(dataSymbMask);
+txWaveform = complex(zeros(slotSampCount * nSlots, 1));
+txDataSymbs = complex(zeros(dataSymbCount * nSlots, 1));
+for slotIdx = 1:nSlots
+    bitStart = (slotIdx - 1) * blockBits + 1;
+    bitEnd = bitStart + blockBits - 1;
+    [slotWaveform, slotSymbs] = txMod(interleavedBits(bitStart:bitEnd));
+    sampStart = (slotIdx - 1) * slotSampCount + 1;
+    sampEnd = sampStart + slotSampCount - 1;
+    dataStart = (slotIdx - 1) * dataSymbCount + 1;
+    dataEnd = dataStart + dataSymbCount - 1;
 
-figure(1);
-subplot(2, 2, 1);
+    txWaveform(sampStart:sampEnd) = slotWaveform;
+    txDataSymbs(dataStart:dataEnd) = slotSymbs(dataSymbMask);
+end
+
+[rxWaveform, ~] = chan(txWaveform);
+
+scatterFig = figure('Name', 'Scatter Plots', 'NumberTitle', 'off');
+errFig = figure('Name', 'Error History', 'NumberTitle', 'off');
+
+figure(scatterFig);
+subplot(1, 2, 1);
 plot(real(txDataSymbs), imag(txDataSymbs), 'bo');
 axis equal; grid on;
 title('Tx Data Symbs');
 xlabel('I'); ylabel('Q');
 
-for algIdx = 1:numel(algs)
-    dem = RxDemodulator('Cfg', cfg, 'EqualizerAlgorithm', algs{algIdx});
-    [rxBits, eqSymbs, errHist] = dem(rxWaveform);
+dem = RxDemodulator('Cfg', cfg);
+[rxBits, eqSymbs, errHist] = dem(rxWaveform);
 
-    ber = mean(rxBits ~= dataBits);
-    rxDataSymbs = eqSymbs(dem.slotSymbType == 3);
-    evmRms = sqrt(mean(abs(rxDataSymbs - txDataSymbs).^2) / mean(abs(txDataSymbs).^2));
-    evmDb = 20 * log10(evmRms);
+ber = mean(rxBits ~= dataBits);
+rxDataSymbs = eqSymbs(dem.slotSymbType == 3);
+evmRms = sqrt(mean(abs(rxDataSymbs - txDataSymbs).^2) / mean(abs(txDataSymbs).^2));
+evmDb = 20 * log10(evmRms);
 
-    fprintf('%s | BER: %.4e | EVM RMS: %.2f dB\n', algs{algIdx}, ber, evmDb);
+fprintf('Kalman | BER: %.4e | EVM RMS: %.2f dB\n', ber, evmDb);
 
-    figure(1);
-    subplot(2, 2, algIdx + 1);
-    plot(real(rxDataSymbs), imag(rxDataSymbs), 'r.');
-    axis equal; grid on;
-    title(sprintf('Rx Equalized Data Symbs (%s)', algs{algIdx}));
-    xlabel('I'); ylabel('Q');
+figure(scatterFig);
+subplot(1, 2, 2);
+plot(real(rxDataSymbs), imag(rxDataSymbs), 'r.');
+axis equal; grid on;
+title('Rx Equalized Data Symbs (Kalman)');
+xlabel('I'); ylabel('Q');
 
-    figure(2);
-    subplot(numel(algs), 1, algIdx);
-    plot(abs(errHist), 'k.-');
-    grid on;
-    title(sprintf('Error History (%s)', algs{algIdx}));
-    xlabel('Symb Index');
-    ylabel('|err|');
-end
+figure(errFig);
+plot(abs(errHist), 'k.-');
+grid on;
+title('Error History (Kalman)');
+xlabel('Symb Index');
+ylabel('|err|');

@@ -1,12 +1,16 @@
 classdef ChannelEqualizer < matlab.System
     properties
-        algorithm = 'LMS';
         nFeedforwardTaps = 20;
         nFeedbackTaps = 8;
         nSampsPerSymb = 4;
         modOrder = 8;
-        trainEq = struct();
-        dataEq = struct();
+        trainEq = struct( ...
+            'initInvCorr', 1e-2, ...
+            'processNoise', 5e-3, ...
+            'measurementNoise', 1e-5);
+        dataEq = struct( ...
+            'processNoise', 1e-3, ...
+            'measurementNoise', 1e-1);
     end
 
     properties (Access = private)
@@ -15,12 +19,8 @@ classdef ChannelEqualizer < matlab.System
         ffDelayLine
         fbDelayLine
         P
-        Q
-        R
         midTapIndex
 
-        measuredNoise = []
-        initialCovariance
     end 
 
 
@@ -46,15 +46,7 @@ classdef ChannelEqualizer < matlab.System
             obj.fbDelayLine = complex(zeros(obj.nFeedbackTaps,1));
 
             totalTaps = obj.nFeedbackTaps + obj.nFeedforwardTaps;
-            if obj.isRls()
-                obj.P = (1/obj.trainEq.initInvCorr)*eye(totalTaps);
-            elseif obj.isKalman()
-                obj.P = (1/obj.trainEq.initInvCorr)*eye(totalTaps);
-                obj.Q = obj.trainEq.processNoise * eye(totalTaps);
-                obj.R = obj.trainEq.measurementNoise;
-            else
-                obj.P = [];
-            end
+            obj.P = (1 / obj.trainEq.initInvCorr) * eye(totalTaps);
         end
 
         function [eqSymbs, errHist] = stepImpl(obj, rxSymbs, trngSymbs, frameSymbType)
@@ -117,47 +109,22 @@ classdef ChannelEqualizer < matlab.System
 
     methods (Access = private)
         function updateWeights(obj, symbErr, eqParams)
-            if obj.isRls()
-                u = [obj.ffDelayLine; -obj.fbDelayLine];
-                Pu = obj.P * u;
-                denom = eqParams.forgetFactor + (u'*Pu);
-                K = Pu/real(denom);
+            u = [obj.ffDelayLine; -obj.fbDelayLine];
+            totalTaps = obj.nFeedforwardTaps + obj.nFeedbackTaps;
+            predP = obj.P + eqParams.processNoise * eye(totalTaps);
+            denom = real(u' * predP * u) + eqParams.measurementNoise;
+            K = predP * u / denom;
 
-                w = [obj.ffWeights; obj.fbWeights] + K*conj(symbErr);
-                obj.ffWeights = w(1:obj.nFeedforwardTaps);
-                obj.fbWeights = w(obj.nFeedforwardTaps + 1: end);
+            w = [obj.ffWeights; obj.fbWeights] + K*conj(symbErr);
+            obj.ffWeights = w(1:obj.nFeedforwardTaps);
+            obj.fbWeights = w(obj.nFeedforwardTaps + 1: end);
 
-                obj.P = (obj.P - K * (u'*obj.P))/eqParams.forgetFactor;
+            obj.P = predP - K * (u' * predP);
 
-            elseif obj.isKalman()
-                u = [obj.ffDelayLine; -obj.fbDelayLine];
-                totalTaps = obj.nFeedforwardTaps + obj.nFeedbackTaps;
-                predP = obj.P + eqParams.processNoise * eye(totalTaps);
-                denom = real(u' * predP * u) + eqParams.measurementNoise;
-                K = predP * u / denom;
-
-                w = [obj.ffWeights; obj.fbWeights] + K*conj(symbErr);
-                obj.ffWeights = w(1:obj.nFeedforwardTaps);
-                obj.fbWeights = w(obj.nFeedforwardTaps + 1: end);
-
-                obj.P = predP - K * (u' * predP);
-
-                % Josepth Stabilized Form
-                % iMat = eye(obj.nFeedforwardTaps + obj.nFeedbackTaps);
-                % newP = (iMat - K * u') * predP * (iMat - K * u')' + K * obj.R * K';
-                % obj.P = (newP + newP')/2; 
-            else
-                obj.ffWeights = obj.ffWeights + eqParams.stepSize * conj(symbErr) * obj.ffDelayLine;
-                obj.fbWeights = obj.fbWeights - eqParams.stepSize * conj(symbErr) * obj.fbDelayLine;
-            end
-        end
-
-        function tf = isRls(obj)
-            tf = strcmpi(obj.algorithm, 'RLS'); 
-        end
-
-        function tf = isKalman(obj)
-            tf = strcmpi(obj.algorithm, 'Kalman');
+            % Joseph stabilized form (optional)
+            % iMat = eye(obj.nFeedforwardTaps + obj.nFeedbackTaps);
+            % newP = (iMat - K * u') * predP * (iMat - K * u')' + K * eqParams.measurementNoise * K';
+            % obj.P = (newP + newP')/2;
         end
     end
 end

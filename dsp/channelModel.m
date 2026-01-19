@@ -128,15 +128,15 @@ classdef channelModel < matlab.System
                 'seed', seed);
 
             cases = [ ...
-                add(false, 0, 0, 10, 1001); ...         % 1: 2400, 1 fixed,  SNR = 10 dB          
-                add(true,  2, 1, 30, 1002); ...         % 2: 2400, 2 fading, multipath = 2 ms, BW = 1 Hz,  SNR = 18 dB
-                add(true,  2, 5, 30, 1003); ...         % 3: 2400, 2 fading, multipath = 2 ms, BW = 5 Hz,  SNR = 30 dB
-                add(true,  5, 1, 30, 1004); ...         % 4: 2400, 2 fading, multipath = 5 ms, BW = 1 Hz,  SNR = 30 dB
-                add(true,  2, 1, 11, 1005); ...         % 5: 1200, 2 fading, multipath = 2 ms, BW = 1 Hz,  SNR = 11 dB
-                add(true,  2, 1, 7,  1006); ...         % 6: 600,  2 fading, multipath = 2 ms, BW = 1 Hz,  SNR = 7  dB
-                add(true,  5, 5, 7,  1007); ...         % 7: 300,  2 fading, multipath = 5 ms, BW = 5 Hz,  SNR = 7  dB
-                add(true,  5, 5, 5,  1008); ...         % 8: 150,  2 fading, multipath = 5 ms, BW = 5 Hz,  SNR = 5  dB
-                add(true,  5, 5, 2,  1009)];            % 9: 75,   2 fading, multipath = 5 ms, BW = 5 Hz,  SNR = 2  dB
+                add(false, 0, 0, 30, 1001); ...         % 1: 2400, 1 fixed,  SNR = 10 dB          
+                add(true,  2, 1/2, 18, 1002); ...         % 2: 2400, 2 fading, multipath = 2 ms, BW = 1 Hz,  SNR = 18 dB
+                add(true,  2, 5/2, 30, 1003); ...         % 3: 2400, 2 fading, multipath = 2 ms, BW = 5 Hz,  SNR = 30 dB
+                add(true,  5, 1/2, 30, 1004); ...         % 4: 2400, 2 fading, multipath = 5 ms, BW = 1 Hz,  SNR = 30 dB
+                add(true,  2, 1/2, 11, 1005); ...         % 5: 1200, 2 fading, multipath = 2 ms, BW = 1 Hz,  SNR = 11 dB
+                add(true,  2, 1/2, 7,  1006); ...         % 6: 600,  2 fading, multipath = 2 ms, BW = 1 Hz,  SNR = 7  dB
+                add(true,  5, 5/2, 7,  1007); ...         % 7: 300,  2 fading, multipath = 5 ms, BW = 5 Hz,  SNR = 7  dB
+                add(true,  5, 5/2, 5,  1008); ...         % 8: 150,  2 fading, multipath = 5 ms, BW = 5 Hz,  SNR = 5  dB
+                add(true,  5, 5/2, 2,  1009)];            % 9: 75,   2 fading, multipath = 5 ms, BW = 5 Hz,  SNR = 2  dB
         end
     end
 end
