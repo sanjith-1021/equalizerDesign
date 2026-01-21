@@ -23,9 +23,6 @@ totalDataSymbs = nSlots * cfg.nHops * cfg.nDataSymbs;
 [dataBits, codedBits] = fec_conv_encode(totalDataSymbs, cfg);
 
 blockBits = cfg.nHops * cfg.nDataSymbs * bitsPerSymb;
-if mod(blockBits, 40) ~= 0
-    error('Interleaver block size must be divisible by 40.');
-end
 interleaverDepth = blockBits / 40;
 interleaverOrder = int_indx_gen(interleaverDepth);
 interleavedBits = zeros(size(codedBits));

@@ -37,6 +37,7 @@ classdef channelModel < matlab.System
             c = obj.caseConfig;
             if ~c.isFading
                 y = awgn(x, c.snrDb, 'measured');
+                y = quantizeComplex16(y);
                 if nargout > 1
                     chanObj = [];
                 end
@@ -44,6 +45,7 @@ classdef channelModel < matlab.System
             end
 
             [y, chanObj] = obj.applyFading(x, c);
+            y = quantizeComplex16(y);
         end
     end
 
@@ -128,7 +130,7 @@ classdef channelModel < matlab.System
                 'seed', seed);
 
             cases = [ ...
-                add(false, 0, 0, 30, 1001); ...         % 1: 2400, 1 fixed,  SNR = 10 dB          
+                add(false, 0, 0, 20, 1001); ...         % 1: 2400, 1 fixed,  SNR = 10 dB          
                 add(true,  2, 1/2, 18, 1002); ...         % 2: 2400, 2 fading, multipath = 2 ms, BW = 1 Hz,  SNR = 18 dB
                 add(true,  2, 5/2, 30, 1003); ...         % 3: 2400, 2 fading, multipath = 2 ms, BW = 5 Hz,  SNR = 30 dB
                 add(true,  5, 1/2, 30, 1004); ...         % 4: 2400, 2 fading, multipath = 5 ms, BW = 1 Hz,  SNR = 30 dB

@@ -43,7 +43,7 @@ classdef RxDemodulator < matlab.System
                                zeros(c.nBlankSymbs, 1)];
             knownSymbs = [c.TrngSeq01; repmat(c.TrngSeq02, c.nHops, 1)];
             obj.slotSymbType = repmat(slotSymbType, nSlots, 1);
-            obj.KnownSymbs = repmat(knownSymbs, nSlots, 1);
+            obj.KnownSymbs = quantizeComplex12(repmat(knownSymbs, nSlots, 1));
 
             eqCfg = c.eq;
             eqArgs = {'nSampsPerSymb', c.sampsPerSymb, ...
@@ -57,9 +57,14 @@ classdef RxDemodulator < matlab.System
 
         function [rxBits, eqSymbs, errHist] = stepImpl(obj, rxWaveform)
             matched = conv(rxWaveform, obj.RrcFilter, 'same');
+            matched = quantizeComplex12(matched);
+            knownSymbs = quantizeComplex12(obj.KnownSymbs);
 
-            reset(obj.EqObj);
+            % reset(obj.EqObj);
             [eqSymbs, errHist] = obj.EqObj(matched, obj.KnownSymbs, obj.slotSymbType);
+
+            scale = (2^11 - 1);
+            eqSymbs = double(eqSymbs)/double(scale);
         %     eqSymbs = matched(1:obj.Cfg.sampsPerSymb:end);
         %    errHist = zeros(length(eqSymbs),1);
             
@@ -76,17 +81,11 @@ classdef RxDemodulator < matlab.System
             demap_out = round(p1 * (2^obj.Cfg.fec.nSoft - 1));
 
             blockBits = obj.Cfg.nHops * obj.Cfg.nDataSymbs * obj.BitsPerSymb;
-            if mod(blockBits, 40) ~= 0
-                error('Interleaver block size must be divisible by 40.');
-            end
             interleaverDepth = blockBits / 40;
             interleaverOrder = int_indx_gen(interleaverDepth);
             deinterleaverOrder = zeros(size(interleaverOrder));
             deinterleaverOrder(interleaverOrder) = 1:numel(interleaverOrder);
 
-            if mod(numel(demap_out), blockBits) ~= 0
-                error('Demapper output length does not align with interleaver block size.');
-            end
             nBlocks = numel(demap_out) / blockBits;
             decodedLen = floor(blockBits * obj.Cfg.fec.rate);
             rxBits = zeros(nBlocks * decodedLen, 1);

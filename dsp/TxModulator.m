@@ -64,6 +64,7 @@ classdef TxModulator < matlab.System
                             zeros(c.nBlankSymbs, 1)];
             upsampled = upsample(frameSymbs, c.sampsPerSymb);
             txWaveform = conv(upsampled, obj.RrcFilter, 'same');
+            txWaveform = quantizeComplex16(txWaveform);
         end
 
         function num = getNumOutputsImpl(~)
