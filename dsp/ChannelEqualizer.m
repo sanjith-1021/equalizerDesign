@@ -1,21 +1,21 @@
-classdef ChannelEqualizer < matlab.system
+classdef ChannelEqualizer < matlab.System
     properties
-        nFeedforwardTaps = 20;
-        nFeedbackTaps = 8;
+        nFeedforwardTaps = 48;
+        nFeedbackTaps = 12;
         nSampsPerSymb = 4;
         modOrder = 8;
         trainEq = struct(...
             'initInvCorr', 1e-2, ...
-            'processNoise', 5e-3,...
-            'measurementNoise', 1e-5);
+            'processNoise', 1e-4,...
+            'measurementNoise', 1e-2);
         dataEq = struct(...
-            'processNoise', 1e-3, ...
-            'measurementNoise', 1e-1);
+            'processNoise', 1e-4, ...
+            'measurementNoise', 4e-2);
 
-        pBits = 20;
-        measBits = 50;
-        kShift = 20;
-        signalScale = 12;
+        kShift = 23;
+        equalzrGain = 12;
+        pScale = 24;
+        measScale = 46;
     end
 
     properties (Access = private)
@@ -55,17 +55,17 @@ classdef ChannelEqualizer < matlab.system
 
             obj.ffWeightsRe = zeros(obj.nFeedforwardTaps, 1, 'int16');
             obj.ffWeightsIm = zeros(obj.nFeedforwardTaps, 1, 'int16');
-            obj.ffWeightsRe(obj.midTapIndex) = obj.signalScale;
+            obj.ffWeightsRe(obj.midTapIndex) = int16(2^obj.equalzrGain);
             obj.fbWeightsRe = zeros(obj.nFeedbackTaps, 1, 'int16');
-            obj.fbWeightsIm = zeros(obj.nFeedforwardTaps, 1, 'int16');
+            obj.fbWeightsIm = zeros(obj.nFeedbackTaps, 1, 'int16');
 
             obj.ffDelayRe = zeros(obj.nFeedforwardTaps, 1, 'int16');
             obj.ffDelayIm = zeros(obj.nFeedforwardTaps, 1, 'int16');
             obj.fbDelayRe = zeros(obj.nFeedbackTaps, 1, 'int16');
-            obj.fbDelayIm = zeros(obj.nFeedbackTpas, 1, 'int16');
+            obj.fbDelayIm = zeros(obj.nFeedbackTaps, 1, 'int16');
 
             totalTaps = obj.nFeedbackTaps + obj.nFeedforwardTaps;
-            pInit = round((1/obj.trainEq.intiInvCorr) * 2^obj.pBits);
+            pInit = round((1/obj.trainEq.initInvCorr) * 2^obj.pScale);
             obj.P = int32(pInit) * eye(totalTaps, 'int32');
 
             [obj.constRe, obj.constIm] = obj.buildConstellation();
@@ -77,7 +77,7 @@ classdef ChannelEqualizer < matlab.system
             nTotalTaps = obj.nFeedbackTaps + obj.nFeedforwardTaps;
 
             rxRe = real(rxSymbs); rxIm = imag(rxSymbs);
-            trngRe = real(trngSymbs), trngIm = imag(trngSymbs);
+            trngRe = real(trngSymbs); trngIm = imag(trngSymbs);
 
             eqSampsRe = zeros(nTotalSamps, 1, 'int16');
             eqSampsIm = zeros(nTotalSamps, 1, 'int16');
@@ -85,8 +85,8 @@ classdef ChannelEqualizer < matlab.system
             errIm = zeros(nTotalSymbs, 1, 'int16');
 
             % weight calculation
-            vRe = zeros(obj.nTotalTaps, 1, 'int64');
-            vIm = zeros(obj.nTotalTaps, 1, 'int64');
+            vRe = zeros(nTotalTaps, 1, 'int64');
+            vIm = zeros(nTotalTaps, 1, 'int64');
             rowRe = zeros(1,nTotalTaps, 'int64');
             rowIm = zeros(1,nTotalTaps, 'int64');
 
@@ -95,7 +95,7 @@ classdef ChannelEqualizer < matlab.system
             for dIdx = 1:nTotalSamps
                 obj.ffDelayRe = [rxRe(dIdx); obj.ffDelayRe(1:end-1)];
                 obj.ffDelayIm = [rxIm(dIdx); obj.ffDelayIm(1:end-1)];
-                [yiRe, yiIm] = obj.fitlerOutput();
+                [yiRe, yiIm] = obj.filterOutput();
                 yIdx = dIdx - obj.midTapIndex + 1;
 
                 if yIdx > 0
@@ -108,7 +108,7 @@ classdef ChannelEqualizer < matlab.system
                         switch symbType
                             case {1, 2}
                                 trngSymbCnt = trngSymbCnt + 1;
-                                hdRe = trngRe(trngSymbCnt); hdIm = trngIm(trngsymbCnt);
+                                hdRe = trngRe(trngSymbCnt); hdIm = trngIm(trngSymbCnt);
                                 eqParams = obj.trainEqFp;
                             case 3
                                 [hdRe, hdIm] = obj.hardDecision(yiRe, yiIm);
@@ -120,14 +120,14 @@ classdef ChannelEqualizer < matlab.system
                         if symbType ~= 0 
                             symbErrRe = int32(hdRe) - int32(yiRe);
                             symbErrIm = int32(hdIm) - int32(yiIm);
-                            errRe(symbIdx) = satInt16(symbErrRe); errIm(symbIdx) = satInt16(symbErrIm);
+                            errRe(symbIdx) = obj.satInt16(symbErrRe); errIm(symbIdx) = obj.satInt16(symbErrIm);
 
                             % Update Weights
                             % ---------------
-                            % 1. predP = P + procNoise*eye(totalTaps)
                             uRe = [obj.ffDelayRe; -obj.fbDelayRe];
                             uIm = [obj.ffDelayIm; -obj.fbDelayIm];
-
+                            
+                            % 1. predP = P + procNoise*eye(totalTaps)
                             predP = obj.P;
                             for idx=1:nTotalTaps
                                 predP(idx, idx) = predP(idx, idx) + eqParams.processNoise;
@@ -138,7 +138,7 @@ classdef ChannelEqualizer < matlab.system
                                 accRe = int64(0);
                                 accIm = int64(0);
                                 for col = 1:nTotalTaps
-                                    pij = predP(row, col);
+                                    pij = int64(predP(row, col));
                                     accRe = accRe + pij * int64(uRe(col));
                                     accIm = accIm + pij * int64(uIm(col));
                                 end
@@ -148,7 +148,7 @@ classdef ChannelEqualizer < matlab.system
 
                             denom = int64(0);
                             for idx = 1:nTotalTaps
-                                denom = denom + int64(uRe(idx))* vRe(idx) * int64(uIm(idx))* vIm(idx);
+                                denom = denom + int64(uRe(idx)) * vRe(idx) + int64(uIm(idx)) * vIm(idx);
                             end
                             denom = denom + eqParams.measurementNoise;
                             if denom == 0, denom = int64(1); end
@@ -158,37 +158,39 @@ classdef ChannelEqualizer < matlab.system
 
 
                             % 3. w = [ffWeights; fbWeights] + K * conj(symbErr) -> Tap assignment
-                            errRe64 = int64(errRe); errIm64 = int64(errIm);
-                            deltaRe = KRe .* errRe64 + KIm .* errIm64;
-                            deltaIm = KRe.* errIm64 - KIm .* errRe64;
+                            errRe64 = int64(symbErrRe); errIm64 = int64(symbErrIm);
+                            deltaRe = idivide(KRe .* errRe64 + KIm .* errIm64, ...
+                                int64(2^obj.kShift), 'fix');
+                            deltaIm = idivide(KRe .* errIm64 - KIm .* errRe64, ...
+                                int64(2^obj.kShift), 'fix');
 
-                            obj.ffWeightsRe = obj.satInt16(obj.ffWeightsRe + deltaRe(1:obj.nFeedforwardTaps));
-                            obj.ffWeightsIm = obj.satInt16(obj.ffWeightsIm + deltaIm(1:obj.nFeedforwardTaps));
-                            obj.fbWeightsRe = obj.satInt16(obj.fbWeightsRe + deltaRe(obj.nFeedforwardTaps + 1:end));
-                            obj.fbWeightsIm = obj.satInt16(obj.fbWeightsIm + deltaRe(obj.nFeedforwardTaps + 1:end));
+                            obj.ffWeightsRe = obj.satInt16(int64(obj.ffWeightsRe) + deltaRe(1:obj.nFeedforwardTaps));
+                            obj.ffWeightsIm = obj.satInt16(int64(obj.ffWeightsIm) + deltaIm(1:obj.nFeedforwardTaps));
+                            obj.fbWeightsRe = obj.satInt16(int64(obj.fbWeightsRe) + deltaRe(obj.nFeedforwardTaps + 1:end));
+                            obj.fbWeightsIm = obj.satInt16(int64(obj.fbWeightsIm) + deltaIm(obj.nFeedforwardTaps + 1:end));
 
 
 
                             % 4. P = predP - K*(u' * predP)
-                            for col = 1:totalTaps
+                            for col = 1:nTotalTaps
                                 accRe = int64(0); accIm = int64(0);
-                                for row = 1:totalTaps
-                                    pij = predP(row, col);
+                                for row = 1:nTotalTaps
+                                    pij = int64(predP(row, col));
                                     accRe = accRe + int64(uRe(row)) * pij;
                                     accIm = accIm + int64(uIm(row)) * pij;
                                 end
                                 rowRe(col) = accRe; rowIm(col) = -accIm;
                             end
 
-                            for row = 1:totalTaps
+                            for row = 1:nTotalTaps
                                 kRe = KRe(row); kIm = KIm(row);
-                                for col = 1:totalTaps
+                                for col = 1:nTotalTaps
                                     realPart = kRe * rowRe(col) - kIm*rowIm(col);
-                                    update = idivide(realPart, int64(2^obj.pBits), 'fix');
-                                    predP(row, col) = predP(row, col) - update;
+                                    update = idivide(realPart, int64(2^obj.pScale), 'fix');
+                                    predP(row, col) = predP(row, col) - int32(update);
                                 end
-                                obj.P = predP;
                             end
+                            obj.P = predP;
 
 
                             obj.fbDelayRe = [hdRe; obj.fbDelayRe(1:end-1)];
@@ -219,7 +221,7 @@ classdef ChannelEqualizer < matlab.system
     methods (Access = private)
 
         function [yiRe, yiIm] = filterOutput(obj)
-            accRe = int32(0); accIm = int32(0);
+            accRe = int64(0); accIm = int64(0);
             for idx = 1:obj.nFeedforwardTaps
                 wr = int64(obj.ffWeightsRe(idx));
                 wi = int64(obj.ffWeightsIm(idx));
@@ -230,14 +232,14 @@ classdef ChannelEqualizer < matlab.system
             end
             for idx = 1:obj.nFeedbackTaps
                 wr = int64(obj.fbWeightsRe(idx));
-                wi = int64(obj.ffWeightsIm(idx));
-                xr = int64(obj.ffDelayRe(idx));
-                xi = int64(obj.ffDelayIm(idx));
-                accRe = accRe + wr*xr - wi*xi;
-                accIm = accIm + wr*xi - wi*xr;
+                wi = int64(obj.fbWeightsIm(idx));
+                xr = int64(obj.fbDelayRe(idx));
+                xi = int64(obj.fbDelayIm(idx));
+                accRe = accRe - (wr*xr - wi*xi);
+                accIm = accIm - (wr*xi + wi*xr);
             end
-            yiRe = obj.satInt16(idivide(accRe, int64(2^obj.signalShift), 'fix'));
-            yiIm = obj.satInt16(idivide(accIm, int64(2^obj.signalShift), 'fix'));
+            yiRe = obj.satInt16(idivide(accRe, int64(2^obj.equalzrGain), 'fix'));
+            yiIm = obj.satInt16(idivide(accIm, int64(2^obj.equalzrGain), 'fix'));
         end
 
         function y = satInt16(~, x)
@@ -251,7 +253,9 @@ classdef ChannelEqualizer < matlab.system
         function [re, im] = buildConstellation(obj)
             k = (0:obj.modOrder-1).';
             symbs = pskmod(k, obj.modOrder, 0, 'gray');
-            [re, im] = quantizeComplex(symbs);
+            const = quantizeComplex12(symbs);
+            re = real(const);
+            im = imag(const);
         end
 
         function [hdRe, hdIm] = hardDecision(obj, yiRe, yiIm)
@@ -264,8 +268,8 @@ classdef ChannelEqualizer < matlab.system
 
         function eqFp = toEqFixed(obj, eq)
             eqFp = struct();
-            eqFp.processNoise = int32(round(eq.processNoise * 2^obj.pBits));
-            eqFp.measurementNoise = int32(round(eq.measurementNoise*2^obj.measBits));
+            eqFp.processNoise = int32(round(eq.processNoise * 2^obj.pScale));
+            eqFp.measurementNoise = int64(round(eq.measurementNoise * 2^obj.measScale));
         end
     end
 end

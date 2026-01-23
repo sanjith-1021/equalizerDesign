@@ -6,17 +6,17 @@ function cfg = presets()
     cfg.filterSpan = 20;
     cfg.sampRate = 9600;
     cfg.nHops = 240;
-    cfg.nSlots = 10;
+    cfg.nSlots = 1;
     cfg.nBlankSymbs = 32;
-    cfg.nTrngSymbs01 = 360;
+    cfg.nTrngSymbs01 = 120;
     cfg.nTrngSymbs02 = 16;
     cfg.nDataSymbs = 32;
     cfg.seed = 101;
     cfg.generators = [1 1 1 1 0 0 1;  % G0 = 171
                     1 0 1 1 0 1 1]; % G1 = 133
     cfg.eq = struct( ...
-        'nFeedforwardTaps', 32, ...
-        'nFeedbackTaps', 24, ...
+        'nFeedforwardTaps', 26, ...
+        'nFeedbackTaps', 6, ...
         'train', struct( ...
             'initInvCorr', 1e-2, ...
             'processNoise', 1e-3, ...
@@ -40,4 +40,5 @@ function cfg = presets()
 
     cfg.nHops = 240;
 
+    cfg.channelModel = 1;
 end

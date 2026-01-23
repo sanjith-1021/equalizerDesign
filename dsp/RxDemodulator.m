@@ -12,6 +12,11 @@ classdef RxDemodulator < matlab.System
     properties (Access = private)
         RrcFilter
         EqObj
+        slotSymbTypeBase
+        knownSymbsBase
+        nSlots
+        slotSymbCount
+        slotSampCount
     end
 
     methods
@@ -30,20 +35,18 @@ classdef RxDemodulator < matlab.System
     methods (Access = protected)
         function setupImpl(obj, ~)
             c = obj.Cfg;
-            nSlots = 1;
-            if isfield(c, 'nSlots') && ~isempty(c.nSlots)
-                nSlots = c.nSlots;
-            end
+            obj.nSlots = c.nSlots;
             obj.RrcFilter = rcosdesign(c.rolloff, c.filterSpan, c.sampsPerSymb, 'sqrt');
             hopTypes = repmat([2 * ones(c.nTrngSymbs02, 1); ...
                                3 * ones(c.nDataSymbs, 1)], c.nHops, 1);
-            slotSymbType = [zeros(c.nBlankSymbs, 1); ...
+            obj.slotSymbType = [zeros(c.nBlankSymbs, 1); ...
                                ones(c.nTrngSymbs01, 1); ...
                                hopTypes; ...
                                zeros(c.nBlankSymbs, 1)];
             knownSymbs = [c.TrngSeq01; repmat(c.TrngSeq02, c.nHops, 1)];
-            obj.slotSymbType = repmat(slotSymbType, nSlots, 1);
-            obj.KnownSymbs = quantizeComplex12(repmat(knownSymbs, nSlots, 1));
+            obj.KnownSymbs = quantizeComplex12(knownSymbs);
+            obj.slotSymbCount = numel(obj.slotSymbType);
+            obj.slotSampCount = obj.slotSymbCount * c.sampsPerSymb;
 
             eqCfg = c.eq;
             eqArgs = {'nSampsPerSymb', c.sampsPerSymb, ...
@@ -58,48 +61,52 @@ classdef RxDemodulator < matlab.System
         function [rxBits, eqSymbs, errHist] = stepImpl(obj, rxWaveform)
             matched = conv(rxWaveform, obj.RrcFilter, 'same');
             matched = quantizeComplex12(matched);
-            knownSymbs = quantizeComplex12(obj.KnownSymbs);
-
-            % reset(obj.EqObj);
-            [eqSymbs, errHist] = obj.EqObj(matched, obj.KnownSymbs, obj.slotSymbType);
-
-            scale = (2^11 - 1);
-            eqSymbs = double(eqSymbs)/double(scale);
-        %     eqSymbs = matched(1:obj.Cfg.sampsPerSymb:end);
-        %    errHist = zeros(length(eqSymbs),1);
-            
-            dataEq = eqSymbs(obj.slotSymbType == 3);
-
-
-            EsNo = 10^(30/10);
-            nVar = 1/EsNo;
-            llr = pskdemod(dataEq, obj.Cfg.M, 0, 'gray', ...
-                'OutputType','llr', 'NoiseVariance', nVar);
-            L = llr(:);
-            Lclip = max(min(L, obj.Cfg.fec.llrClip), -obj.Cfg.fec.llrClip);
-            p1 = 1 ./ (1 + exp(Lclip));
-            demap_out = round(p1 * (2^obj.Cfg.fec.nSoft - 1));
+            totalSymbs = obj.slotSymbCount * obj.nSlots;
+            eqSymbs = complex(zeros(totalSymbs, 1));
+            errHist = complex(zeros(totalSymbs, 1));
 
             blockBits = obj.Cfg.nHops * obj.Cfg.nDataSymbs * obj.BitsPerSymb;
             interleaverDepth = blockBits / 40;
             interleaverOrder = int_indx_gen(interleaverDepth);
             deinterleaverOrder = zeros(size(interleaverOrder));
             deinterleaverOrder(interleaverOrder) = 1:numel(interleaverOrder);
+            deintlvdAll = zeros(blockBits * obj.nSlots, 1);
 
-            nBlocks = numel(demap_out) / blockBits;
-            decodedLen = floor(blockBits * obj.Cfg.fec.rate);
-            rxBits = zeros(nBlocks * decodedLen, 1);
-            for blkIdx = 1:nBlocks
-                blkStart = (blkIdx - 1) * blockBits + 1;
-                blkEnd = blkStart + blockBits - 1;
-                block = demap_out(blkStart:blkEnd);
-                deintlvd_out = block(deinterleaverOrder);
-                dec_bits = vitdec(deintlvd_out, obj.Cfg.fec.trellis, ...
-                    obj.Cfg.fec.tblen, 'trunc', 'soft', obj.Cfg.fec.nSoft);
-                outStart = (blkIdx - 1) * decodedLen + 1;
-                outEnd = outStart + decodedLen - 1;
-                rxBits(outStart:outEnd) = dec_bits(:);
+            EsNo = 10^(30/10);
+            nVar = 1 / EsNo;
+
+            for slotIdx = 1:obj.nSlots
+                sampStart = (slotIdx - 1) * obj.slotSampCount + 1;
+                sampEnd = sampStart + obj.slotSampCount - 1;
+                symbStart = (slotIdx - 1) * obj.slotSymbCount + 1;
+                symbEnd = symbStart + obj.slotSymbCount - 1;
+
+                slotMatched = matched(sampStart:sampEnd);
+                % reset(obj.EqObj);
+                [slotEqSymbs, slotErr] = obj.EqObj(slotMatched, obj.KnownSymbs, obj.slotSymbType);
+                eqSymbs(symbStart:symbEnd) = slotEqSymbs;
+                errHist(symbStart:symbEnd) = slotErr;
+
+                dataEq = slotEqSymbs(obj.slotSymbType == 3);
+                dataEq = double(dataEq) / double(2^11 - 1);
+                llr = pskdemod(dataEq, obj.Cfg.M, 0, 'gray', ...
+                    'OutputType','llr', 'NoiseVariance', nVar);
+                L = llr(:);
+                Lclip = max(min(L, obj.Cfg.fec.llrClip), -obj.Cfg.fec.llrClip);
+                p1 = 1 ./ (1 + exp(Lclip));
+                demap_out = round(p1 * (2^obj.Cfg.fec.nSoft - 1));
+
+                deintlvd_out = demap_out(deinterleaverOrder);
+                bitStart = (slotIdx - 1) * blockBits + 1;
+                bitEnd = bitStart + blockBits - 1;
+                deintlvdAll(bitStart:bitEnd) = deintlvd_out;
             end
+
+            rxBits = vitdec(deintlvdAll, obj.Cfg.fec.trellis, ...
+                obj.Cfg.fec.tblen, 'trunc', 'soft', obj.Cfg.fec.nSoft);
+            rxBits = rxBits(:);
+        %     eqSymbs = matched(1:obj.Cfg.sampsPerSymb:end);
+        %    errHist = zeros(length(eqSymbs),1);
         end
 
         function num = getNumInputsImpl(~)
